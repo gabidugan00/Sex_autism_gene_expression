@@ -14,4 +14,5 @@ Sex differences are widespread across neurodevelopmental conditions, yet it rema
 
 ## Scripts: 
 
-The scripts included in this repository are to recreate the figures made for the main text of the manuscript, as well as to run differential gene expression with dreamlet and filtering of the seurat object from the fastq files. 
+The scripts included in this repository are to recreate the analysis and figures made for the manuscript, as well as to run differential gene expression with limma-voom on sex with permutations.
+
