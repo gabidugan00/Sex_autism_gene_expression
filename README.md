@@ -1,11 +1,9 @@
 # Sex and autism share cell type specific effects on cortical gene expression<img width="468" height="103" alt="image" src="https://github.com/user-attachments/assets/afd0b8a0-718c-43fb-89fd-0c136abbe1df" />
 
 
-Authors: Gabrielle Dugan1,2, Alex R. DeCasien2, Ramin Ali Marandi Ghoddousi3, Rachel Smith4, Siyuan Liu1, Pavan Auluck5, Stefano Marenco5, Daniel Geschwind3, Jason P. Lerch6,7,8, Armin Raznahan1<img width="468" height="44" alt="image" src="https://github.com/user-attachments/assets/f1ff2b6d-6723-47b9-ba11-5a8dbe0bdea3" />
+Authors: Gabrielle Dugan1,2, Alex R. DeCasien2, Ramin Ali Marandi Ghoddousi3, Rachel Smith4, Siyuan Liu1, Pavan Auluck5, Stefano Marenco5, Daniel Geschwind3, Jason P. Lerch6,7,8, Armin Raznahan1
 
 Affiliations: 1 Human Genetics Branch, National Institute of Mental Health (NIMH), 2 Computational and Evolutionary Neurogenomics Unit, National Institute of Aging, 3 Department of Neurology and Semel Institute for Neuroscience and Human Behavior, The David Geffen School of Medicine, University of California Los Angeles, 4 Perelman School of Medicine, University of Pennsylvania, 5 Human Brain Collection Core, NIMH, 6 Oxford Centre for Integrative Neuroimaging, University of Oxford, 7 Department of Medical Biophysics, University of Toronto, 8 Mouse Imaging Centre, The Hospital of Sick Children, Toronto
-
-<img width="468" height="265" alt="image" src="https://github.com/user-attachments/assets/c35ba858-10b0-4ee8-a930-7993b160e92f" />
 
 
 ## Data: 
