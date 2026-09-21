@@ -131,3 +131,27 @@ p2_or_dotplot = ggplot(fisher_df, aes(x = comparison, y = OR, fill = comparison)
 p2_or_dotplot
 
 
+# ============================================================
+# Comparing odds ratios
+# ============================================================
+odds_ratio = lapply(names(fisher_results), function(nm){
+  res = fisher_results[[nm]]
+  data.frame(
+    OR = as.numeric(res$estimate),
+    Upper = as.numeric(res$conf.int[2]),
+    Lower = as.numeric(res$conf.int[1]),
+    Comparison = nm
+  )
+})
+
+odds_ratio = Reduce(rbind, odds_ratio)
+
+odds_ratio$logOR = log(odds_ratio$OR)
+
+odds_ratio$SE_logOR = (log(odds_ratio$Upper) - log(odds_ratio$Lower)) / (2 * 1.96)
+
+logOR_diff = odds_ratio$logOR[1] - odds_ratio$logOR[2]
+SE_diff = sqrt(odds_ratio$SE_logOR[1]^2 + odds_ratio$SE_logOR[2]^2)
+
+z.score = logOR_diff / SE_diff
+p.value = 2 * (1 - pnorm(abs(z.score)))
