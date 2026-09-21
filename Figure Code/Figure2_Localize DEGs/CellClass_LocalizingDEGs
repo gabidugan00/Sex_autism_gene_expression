@@ -1,0 +1,360 @@
+
+suppressPackageStartupMessages({
+  library(dplyr)
+  library(tidyverse)
+  library(stringr)
+  library(cowplot)
+  library(ggplot2)
+  library(readxl)
+  library(tibble)
+  library(WriteXLS)
+  library(ggrepel)
+  library(scales)
+  library(ggVennDiagram)
+  library(SuperExactTest)
+  library(clusterProfiler)
+  library(org.Hs.eg.db)
+})
+
+# =============================================================================
+# Read in Data 
+# =============================================================================
+
+#DGE Results
+
+asd_dge <- read_xlsx("~/Data_S1_CELLTYPE-SPECIFIC_RAW_DEG.xlsx", col_names = TRUE) #Autism DGE
+
+is_date <- grepl("^\\d{1,2}/\\d{1,2}/\\d{4}$",asd_dge$gene)
+asd_dge <- asd_dge[!is_date, ]
+
+asd_dge<- asd_dge %>%
+  dplyr::mutate(ASD_Broad_Celltype = case_when(
+    `CELL TYPE` %in% c("EXT_6_L23", "EXT_3_L23", "EXT_11_L34", "EXT_10_L34", 
+                       "EXT_1_L4", "EXT_13_L45", "EXT_14_L5B", "EXT_4_L56", 
+                       "EXT_7_L2356", "EXT_5_L56", "EXT_2_L56", "EXT_12_L56", 
+                       "EXT_8_L6", "EXT_9_L6") ~ "ExcNeu",
+    `CELL TYPE` %in% c("INT_5_SST", "INT_2_PV_SULF", "INT_6_PV", "INT_1_KIT", "INT_3_RELN_ND", 
+                       "INT_4_VIP_CR") ~ "InhNeu",
+    `CELL TYPE` %in% c("ASTRO_1", "ASTRO_2", "ASTRO_3") ~ "Astro",
+    `CELL TYPE` %in% c("MG1", "MG2","BBB_MG3") ~ "Micro",
+    `CELL TYPE` %in% c("ODC_1", "ODC_2", "ODC_3","OPCS_1", "OPCS_2", "OPCS_3", "OPCS_4") ~ "Oligo/OPC",
+    `CELL TYPE` %in% c("BBB_Endo_1","BBB_Pericytes","BBB_SM(Mural)") ~ "NeuVasc",
+    TRUE ~ "Other"  )) 
+
+sex_dge <- readRDS("/vf/users/HGBomics/GabiDugan/OxCam/Human.Transcriptomics/Sex_ASD/Full_CT_BR/rCCA/Redo_114/sex_dge") 
+
+sex_dge <- sex_dge %>%
+  dplyr::mutate(Sex_Broad_Celltype = case_when(
+    celltype_only %in% c("L23IT", "L4IT", "L5IT", "L56NP", "L6IT", "L6b", "L6CT",
+                         "L5ET/L6IT", "L6CT/L5IT", "L23IT/L5IT") ~ "ExcNeu",
+    celltype_only %in% c("VIP", "PVALB", "SST", "LAMP5", "ADARB2", "PAX6", "Chandelier", "Sncg") ~ "InhNeu",
+    celltype_only %in% c("Astro") ~ "Astro",
+    celltype_only %in% c("Micro") ~ "Micro",
+    celltype_only %in% c("Oligo", "OPC") ~ "Oligo/OPC",
+    celltype_only %in% c("BEC") ~ "NeuVasc",
+    TRUE ~ "Other"  ))
+
+
+#Overlaping DEGs permutation results - calculated in june2026_sup_autosomal
+perm_fishers_concat_no_xy_chromosome = readRDS("/vf/users/DNU/gabidugan/Sex_Permutations_DEG_OverlapAutism/perm_fishers_concat_no_xy_chromosome")
+
+perm_fishers_concat = perm_fishers_concat_no_xy_chromosome
+
+# ============================================================
+# Sex-chromosome gene lists
+# ============================================================
+
+xy_genes <- readRDS("/vf/users/HGBomics/GabiDugan/OxCam/Human.Transcriptomics/Key_Figures/Redraft_February2026/xy_genes")
+x_genes  <- readRDS("/vf/users/HGBomics/GabiDugan/OxCam/Human.Transcriptomics/Key_Figures/Redraft_February2026/x_genes")
+y_genes  <- readRDS("/vf/users/HGBomics/GabiDugan/OxCam/Human.Transcriptomics/Key_Figures/Redraft_February2026/y_genes")
+
+par_1_genes <- c(
+  "AKAP17A", "ASMTL", "ASMTL-AS1", "CD99", "CD99P1", "CRLF2", "CSF2RA",
+  "DHRSX", "DHRSX-IT1", "FABP5P13", "GTPBP6", "IL3RA", "LINC00102",
+  "LINC00106", "LINC00685", "MIR3690", "MIR6089", "PLCXD1", "PPP2R3B",
+  "P2RY8", "SHOX", "SLC25A6", "XG", "ZBED1"
+)
+par_2_genes <- c(
+  "AMD1P2", "DDX11L16", "DPH3P2", "IL9R", "SPRY3", "ELOCP24",
+  "TRPC6P1", "VAMP7", "WASH6P", "WASIR1"
+)
+par_genes <- c(par_1_genes, par_2_genes)
+
+xy_genes_nopar <- xy_genes[!xy_genes %in% par_genes]
+x_genes_nopar  <- x_genes[!x_genes %in% par_genes]
+y_genes_nopar  <- y_genes[!y_genes %in% par_genes]
+
+# ============================================================
+# Organize data
+# ============================================================
+
+# Load DGE results
+asd_dge_filt <- asd_dge %>%
+  dplyr::filter(!gene %in% xy_genes)
+
+sex_dge_filt <- sex_dge %>%
+  dplyr::filter(!gene %in% xy_genes)
+
+#Order
+asd_celltypes   <- c("ExcNeu", "InhNeu", "Astro", "Oligo/OPC", "Micro", "NeuVasc")
+sex_celltypes   <- c("ExcNeu", "InhNeu", "Astro", "Oligo/OPC", "Micro", "NeuVasc")
+brain_regions   <- c("FusGyr", "AngGyr", "CauIns", "InfLTO", "IntParSul", "RetCor")
+
+
+# ============================================================
+# Fisher's tests and permutations
+# ============================================================
+
+# work horse function for fishers test of overlaps
+fishers_test_broad <- run_fishers_conconcate(asd_dge_filt, sex_dge_filt, looser = TRUE) %>%
+  mutate(
+    Sex_BroadCelltype = sub("\\..*", "", Sex_celltype),
+    Sex_Brainregion   = sub(".*\\.", "", Sex_celltype),
+    Sig               = FDR < 0.05,
+    Sex_Brainregion   = factor(Sex_Brainregion, levels = brain_regions),
+    ASD_celltype      = factor(ASD_celltype,    levels = asd_celltypes),
+    Sex_BroadCelltype = factor(Sex_BroadCelltype, levels = rev(sex_celltypes))
+  )
+
+#original test of overlap
+obs_df <- fishers_test_broad %>%
+  dplyr::filter(overlap_genes > 0) %>%
+  dplyr::select(ASD_celltype, Sex_celltype, p_value, odds_ratio,
+                total_background, total_ASD_DEGs, total_Sex_DEGs, overlap_genes) %>%
+  mutate(
+    a_obs    = overlap_genes,
+    b_obs    = total_ASD_DEGs - a_obs,
+    c_obs    = total_Sex_DEGs - a_obs,
+    d_obs    = total_background - (a_obs + b_obs + c_obs),
+    obs_OR   = ((a_obs + 0.5) * (d_obs + 0.5)) / ((b_obs + 0.5) * (c_obs + 0.5)),
+    obs_logOR = log(obs_OR)
+  ) %>%
+  dplyr::select(ASD_celltype, Sex_celltype, obs_OR, obs_logOR,
+                a_obs, b_obs, c_obs, d_obs)
+
+valid_keys <- obs_df %>%
+  dplyr::select(ASD_celltype, Sex_celltype) %>%
+  mutate(Full = paste(ASD_celltype, Sex_celltype, sep = "_"))
+
+# Permutation results
+perm_fishers_concat <- perm_fishers_concat_no_xy_chromosome
+
+perm_fishers_concat <- add_columns_perm_fishers(perm_fishers_concat)
+
+perm_df <- bind_rows(perm_fishers_concat, .id = "perm_id") %>%
+  mutate(
+    ASD_celltype = sub("BEC_Endo", "NeuVasc", ASD_celltype),
+    Sex_celltype = sub("BEC_Endo", "NeuVasc", Sex_celltype)
+  )
+
+perm_df_filt <- perm_df %>%
+  mutate(Full = paste(ASD_celltype, Sex_celltype, sep = "_")) %>%
+  dplyr::filter(Full %in% valid_keys$Full) %>%
+  mutate(
+    a_perm    = overlap_genes,
+    b         = total_ASD_DEGs - overlap_genes,
+    c_perm    = total_Sex_DEGs - overlap_genes,
+    d         = total_background - (a_perm + b + c_perm),
+    perm_OR   = ((a_perm + 0.5) * (d + 0.5)) / ((b + 0.5) * (c_perm + 0.5)),
+    perm_logOR = log(perm_OR)
+  )
+
+# some permutations showed 0 DEGs, but these need to be included as permutations, rather than dropped
+# When sex has 0 DEGs for a region-cell type permutation, that combo is dropped from output; pad with empty rows so each combo reaches exactly 1000
+replicable_info <- fishers_test_broad %>%
+  dplyr::filter(overlap_genes > 0) %>%
+  dplyr::select(ASD_celltype, Sex_celltype, total_ASD_DEGs, total_background)
+
+perm_padded <- perm_df_filt %>%
+  dplyr::count(ASD_celltype, Sex_celltype, name = "n_perm") %>%
+  left_join(replicable_info, by = c("ASD_celltype", "Sex_celltype")) %>%
+  mutate(n_missing = pmax(0, 1000 - n_perm)) %>%
+  mutate(extra_rows = purrr::pmap(
+    list(ASD_celltype, Sex_celltype, n_missing, total_ASD_DEGs, total_background),
+    function(ac, sc, nm, asd_total, bg) {
+      nm <- as.integer(nm)
+      if (nm == 0) return(NULL)
+      row <- tibble(
+        ASD_celltype   = ac,
+        Sex_celltype   = sc,
+        overlap_genes  = 0,
+        total_ASD_DEGs = asd_total,
+        total_Sex_DEGs = 0,
+        total_background = bg,
+        a_perm   = 0,
+        b        = asd_total,
+        c_perm   = 0,
+        d        = bg - asd_total,
+        perm_OR  = ((0 + 0.5) * (bg - asd_total + 0.5)) / ((asd_total + 0.5) * (0 + 0.5)),
+        perm_logOR = log(perm_OR)
+      )
+      bind_rows(replicate(nm, row, simplify = FALSE))
+    }
+  ))
+
+perm_df_filt_complete <- bind_rows(
+  perm_df_filt,
+  bind_rows(perm_padded$extra_rows)
+)
+
+# Empirical p-values comparing permutations to original
+empirical_pvals_auto <- perm_df_filt_complete %>%
+  inner_join(obs_df %>% dplyr::select(ASD_celltype, Sex_celltype, a_obs),
+             by = c("ASD_celltype", "Sex_celltype")) %>%
+  mutate(extreme = a_perm >= a_obs) %>%
+  dplyr::group_by(ASD_celltype, Sex_celltype) %>%
+  dplyr::summarise(
+    n_perm      = n(),
+    p_empirical = (sum(extreme) + 1) / (n_perm + 1),
+    .groups     = "drop"
+  ) %>%
+  left_join(obs_df, by = c("ASD_celltype", "Sex_celltype")) %>%
+  mutate(
+    Sex_BroadCelltype = sub("\\..*", "", Sex_celltype),
+    Sex_Brainregion   = sub(".*\\.", "", Sex_celltype),
+    Sig               = p_empirical < 0.05,
+    Sex_Brainregion   = factor(Sex_Brainregion,   levels = brain_regions),
+    ASD_celltype      = factor(ASD_celltype,       levels = asd_celltypes),
+    Sex_BroadCelltype = factor(Sex_BroadCelltype,  levels = rev(sex_celltypes))
+  )
+
+# Sex DEG counts 
+SEX_DEGs <- filter_DEGs(sex_dge_filt, "logFC", "adj.P.Val", logFC_cut = 0, p_cut = 0.1) %>%
+  dplyr::group_by(Sex_Broad_Celltype, brainregion_shorten) %>%
+  dplyr::summarise(n_SEX_DEGs = dplyr::n_distinct(gene), .groups = "drop")
+
+# Supplementary figure: Fisher's OR and overlap size dot plots 
+OR_dotplot <- ggplot(fishers_test_broad,
+                     aes(x = ASD_celltype, y = Sex_BroadCelltype,
+                         fill = -log10(FDR), size = odds_ratio)) +
+  geom_point(shape = 21, aes(alpha = ifelse(Sig, 1, 0.3))) +
+  scale_fill_gradient2(low = "white", high = "grey20") +
+  scale_size_continuous(range = c(1, 14)) +
+  facet_wrap(~Sex_Brainregion) +
+  labs(
+    title    = "Overlapping DEGs between Sex and Autism",
+    subtitle = "Fisher's Test with FDR across the 171 Tests\nShowing Odds Ratio of Overlapping Genes"
+  ) +
+  theme_cowplot() +
+  ylab("Sex Broad Cell Type") + xlab("Autism Broad Cell Type") +
+  theme(
+    axis.text.x  = element_text(angle = 45, hjust = 1),
+    plot.title   = element_text(hjust = 0.5, size = 24, face = "bold"),
+    plot.subtitle = element_text(hjust = 0.5, size = 18),
+    strip.text   = element_text(size = 20, face = "bold"),
+    axis.text    = element_text(size = 20),
+    axis.title   = element_text(size = 22),
+    legend.position = "bottom"
+  )
+
+overlapsize_dotplot <- ggplot(fishers_test_broad,
+                              aes(x = ASD_celltype, y = Sex_BroadCelltype,
+                                  fill = -log10(FDR), size = overlap_genes)) +
+  geom_point(shape = 21, aes(alpha = ifelse(Sig, 1, 0.3))) +
+  scale_fill_gradient2(low = "white", high = "grey20") +
+  scale_size_continuous(range = c(1, 14)) +
+  facet_wrap(~Sex_Brainregion) +
+  labs(
+    title    = "Overlapping DEGs between Sex and Autism",
+    subtitle = "Fisher's Test with FDR across the 171 Tests\nShowing Number of Overlapping Genes"
+  ) +
+  theme_cowplot() +
+  ylab("Sex Broad Cell Type") + xlab("Autism Broad Cell Type") +
+  theme(
+    axis.text.x  = element_text(angle = 45, hjust = 1),
+    plot.title   = element_text(hjust = 0.5, size = 24, face = "bold"),
+    plot.subtitle = element_text(hjust = 0.5, size = 18),
+    strip.text   = element_text(size = 20, face = "bold"),
+    axis.text    = element_text(size = 20),
+    axis.title   = element_text(size = 22),
+    legend.position = "bottom"
+  )
+
+number_sex_degs_barplot <- ggplot(SEX_DEGs,
+                                  aes(x = Sex_Broad_Celltype, y = n_SEX_DEGs)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = n_SEX_DEGs), vjust = -0.5, size = 5) +
+  facet_wrap(~brainregion_shorten, nrow = 1) +
+  labs(title = "Number of Differentially\nExpressed Genes (DEGs) in Sex") +
+  theme_cowplot() +
+  ylab("Number of DEGs (FDR q<0.1)") + xlab("Sex Cell Type") +
+  theme(
+    axis.text.x  = element_text(angle = 45, hjust = 1),
+    plot.title   = element_text(hjust = 0.5, size = 24, face = "bold"),
+    strip.text   = element_text(size = 20, face = "bold"),
+    axis.text    = element_text(size = 20),
+    axis.title   = element_text(size = 22),
+    legend.position = "bottom"
+  )
+
+p1_empirical_dotplot <- ggplot(empirical_pvals_auto,
+                               aes(x = ASD_celltype, y = Sex_BroadCelltype,
+                                   size = -log10(p_empirical), fill = a_obs)) +
+  geom_point(shape = 21, aes(color=Sig,alpha = Sig), stroke =1.5) +
+  scale_fill_gradient2(low = "white",mid ="#F7E2B9", high = "#F0C674", midpoint=50) +
+  scale_size_continuous(range = c(5, 20), limits=c(0,10)) +
+  scale_color_manual(values =c("TRUE"="black", "FALSE"= "white")) +
+  scale_alpha_manual(values =c("TRUE"=1, "FALSE"= 0.2)) +
+  facet_wrap(~Sex_Brainregion, ncol=6) +
+  labs(
+    title    = "Localized Overlap of Autosomal DEGs by Broad Cell Type",
+    subtitle = "Removing XY-Chromosome Genes, Empirical P-Values Based on 1000 Perm of Sex",
+    fill     = "DEG Count",
+    alpha    = "Significant",
+    size     = "-log10(FDR q)"
+  ) +
+  theme_cowplot() +
+  ylab("Sex Broad Cell Type") + xlab("Autism Broad Cell Type") +
+  theme(
+    axis.text.x  = element_text(angle = 45, hjust = 1),
+    plot.title   = element_text(hjust = 0.5, face = "bold", size = 24),
+    plot.subtitle = element_text(hjust = 0.5, size = 18),
+    strip.text   = element_text(size = 20, face = "bold"),
+    axis.text    = element_text(size = 20),
+    axis.title   = element_text(size = 22),
+    legend.position = "bottom"
+  )
+p1_empirical_dotplot
+
+# ============================================================
+# Panel b DEG directionality dotplot for full (empirical p-values calcualted in April2026_local)
+# ============================================================
+
+empirical_pvals = readRDS("/vf/users/HGBomics/GabiDugan/OxCam/Human.Transcriptomics/Key_Figures/Redraft_April2026/DEG Overlaps/empirical_pvals_DEGoverlapperm")
+
+result <- run_deg_directionality(sex_dge, asd_dge, empirical_pvals)
+
+result =readRDS("/vf/users/HGBomics/GabiDugan/OxCam/Human.Transcriptomics/Key_Figures/Redraft_April2026/DEG Overlaps/deg_directionality_full_result")
+
+p2_directional_dotplot_sig = result$plot           
+
+fishers_direction = result$fisher_results 
+
+sum_table = data.frame("Sum_MB_AU" = sum(fishers_direction$MB.AU), "Sum_MB_AD" = sum(fishers_direction$MB.AD), "Sum_FB_AU" = sum(fishers_direction$FB.AU), "Sum_FB_AD" = sum(fishers_direction$FB.AD))
+
+mat <- matrix(c(sum_table$Sum_MB_AU, sum_table$Sum_FB_AU,sum_table$Sum_MB_AD, sum_table$Sum_FB_AD), nrow = 2, dimnames = list(c("MB", "FB"), c("AU", "AD")))
+
+ft <- fisher.test(mat)
+
+# ============================================================
+# Panel c autosomal DEG directionality dotplot
+# ============================================================
+
+sex_dge_auto = sex_dge  |>  filter(!gene %in% xy_genes)
+asd_dge_auto = asd_dge  |>  filter(!gene %in% xy_genes)
+
+result_auto <- run_deg_directionality(sex_dge_auto, asd_dge_auto, empirical_pvals_auto)
+
+p3_directional_dotplot_sig_auto <- result_auto$plot           
+
+result_auto =readRDS("/vf/users/HGBomics/GabiDugan/OxCam/Human.Transcriptomics/Key_Figures/Redraft_April2026/DEG Overlaps/deg_directionality_auto_result")
+
+y = result_auto$fisher_results 
+result_auto$counts         
+result_auto$directed_degs 
+
+pdf("SupFig2_size_changecolor_yellow.pdf", width = 20, height = 20)
+plot_grid(p1_empirical_dotplot, p2_directional_dotplot_sig,p3_directional_dotplot_sig_auto, align = "hv", axis= "bl",ncol = 1)
+dev.off()
+
+
