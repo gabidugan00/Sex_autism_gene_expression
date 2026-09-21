@@ -1,4 +1,4 @@
-# Sex and autism share cell type specific effects on cortical gene expression<img width="468" height="103" alt="image" src="https://github.com/user-attachments/assets/afd0b8a0-718c-43fb-89fd-0c136abbe1df" />
+# Sex and autism share cell type specific effects on cortical gene expression
 
 
 Authors: Gabrielle Dugan1,2, Alex R. DeCasien2, Ramin Ali Marandi Ghoddousi3, Rachel Smith4, Siyuan Liu1, Pavan Auluck5, Stefano Marenco5, Daniel Geschwind3, Jason P. Lerch6,7,8, Armin Raznahan1
