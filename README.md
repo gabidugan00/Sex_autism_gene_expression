@@ -1,0 +1,19 @@
+# Sex and autism share cell type specific effects on cortical gene expression<img width="468" height="103" alt="image" src="https://github.com/user-attachments/assets/afd0b8a0-718c-43fb-89fd-0c136abbe1df" />
+
+
+Authors: Gabrielle Dugan1,2, Alex R. DeCasien2, Ramin Ali Marandi Ghoddousi3, Rachel Smith4, Siyuan Liu1, Pavan Auluck5, Stefano Marenco5, Daniel Geschwind3, Jason P. Lerch6,7,8, Armin Raznahan1<img width="468" height="44" alt="image" src="https://github.com/user-attachments/assets/f1ff2b6d-6723-47b9-ba11-5a8dbe0bdea3" />
+
+Affiliations: 1 Human Genetics Branch, National Institute of Mental Health (NIMH), 2 Computational and Evolutionary Neurogenomics Unit, National Institute of Aging, 3 Department of Neurology and Semel Institute for Neuroscience and Human Behavior, The David Geffen School of Medicine, University of California Los Angeles, 4 Perelman School of Medicine, University of Pennsylvania, 5 Human Brain Collection Core, NIMH, 6 Oxford Centre for Integrative Neuroimaging, University of Oxford, 7 Department of Medical Biophysics, University of Toronto, 8 Mouse Imaging Centre, The Hospital of Sick Children, Toronto
+
+<img width="468" height="265" alt="image" src="https://github.com/user-attachments/assets/c35ba858-10b0-4ee8-a930-7993b160e92f" />
+
+
+## Data: 
+
+## Abstract: 
+
+Sex differences are widespread across neurodevelopmental conditions, yet it remains unclear how sex may modulate risk, potentially from sex differences intersecting with the neurobiology of these conditions. Autism spectrum conditions are among the most sex-biased, but studies of overlapping sex and autism effects on the brain have been limited to bulk tissue. Using recently available single-nucleus RNA-sequencing data, we examined how regional, cell type specific sex effects intersect with transcriptomic signatures of autism, and schizophrenia as a comparison. Cellular expression effects were estimated for sex across six cortical regions (169 samples, 30 individuals), autism (63 individuals, 33 cases), and schizophrenia (140 individuals, 65 cases) in the frontal cortex. Sex-differentially expressed genes showed greater enrichment for autism than schizophrenia signatures, which localized to sex differences within fusiform gyrus neurons. Using regularized canonical correlation analysis, we detected a significant shared transcriptional axis between sex- and autism-effects, but not between sex and schizophrenia. The significant axis existed in two modes, which indicated autism-signatures were (i) positively correlated (autism>controls and males >females) in fusiform gyrus excitatory neurons, and (ii) negatively correlated in angular gyrus and caudal insula glial cells. The negative pole of the axis was enriched for synaptic terms and autism risk genes and coalesced into a highly connected protein-protein interaction network. Together these findings highlight a distinct transcriptomic relationship between sex and autism, not observed for schizophrenia, which follows cell type– and region–specific gene-expression changes through which sex-related biology intersects with autism risk in the human cortex.
+
+## Scripts: 
+
+The scripts included in this repository are to recreate the figures made for the main text of the manuscript, as well as to run differential gene expression with dreamlet and filtering of the seurat object from the fastq files. 
