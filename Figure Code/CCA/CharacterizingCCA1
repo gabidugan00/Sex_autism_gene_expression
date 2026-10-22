@@ -1,0 +1,202 @@
+# ===============================
+#Scatter plots labelling genes
+# ===============================
+
+#Labeling top points
+CCA1_weights <- CCA1_weights %>%
+  mutate(mean_score = (CCA1_weights$CCA1_Weight_Sex + CCA1_weights$CCA1_Weight_ASD) / 2)
+
+CCA1_weights$color_value <- CCA1_weights$CCA1_Weight_Sex * CCA1_weights$CCA1_Weight_ASD
+CCA1_weights$sum_score = CCA1_weights$CCA1_Weight_Sex + CCA1_weights$CCA1_Weight_ASD
+
+cor_test <- cor.test(CCA1_weights$CCA1_Weight_Sex, CCA1_weights$CCA1_Weight_ASD, method = "pearson")
+r_value <- round(cor_test$estimate, 2)
+cor_label <- paste0("r = ", r_value)
+
+CCA1_weights$Chromosome = "Autosomal"
+CCA1_weights$Chromosome[CCA1_weights$gene %in% y_genes] = "Y-Chr"
+CCA1_weights$Chromosome[CCA1_weights$gene %in% x_genes] = "X-Chr"
+CCA1_weights$autism_risk_gene = "NO"
+CCA1_weights$autism_risk_gene[CCA1_weights$gene %in% combined_autism_genes$`Combined Autism`] ="Yes"
+
+sc_shape =c("Y-Chr" = 25, "X-Chr" = 23, "Autosomal" = 21)
+
+risk_genes <- CCA1_weights[CCA1_weights$gene %in% combined_autism_genes$`Combined Autism`,]
+top_risk_genes <- risk_genes[order(abs(risk_genes$mean_score), decreasing=TRUE),][1:20,]
+
+p1_scatter_asd_sex <- ggplot(CCA1_weights, aes(x = CCA1_Weight_Sex, y = CCA1_Weight_ASD)) +
+  theme_cowplot() +
+  geom_point(aes(fill = mean_score, alpha = abs(mean_score), color=mean_score,shape =Chromosome, size = abs(mean_score))) +
+  geom_text_repel(data = top_risk_genes, aes(label =  gene,color=mean_score, size =abs(mean_score)),max.overlaps = 30, box.padding = 0.3,point.padding = 0.5) +
+  scale_size_continuous(range =c(5,15))+
+  scale_shape_manual(values = sc_shape)+
+  labs(title = "CCA1 Gene Scores",x = "Sex Score", y = "Autism Score", color="Mean Score") +
+  scale_fill_gradientn(colors = c("#01665e", "#f7f7f7", "#b35806"),values = rescale(c(-5, 0, 8)),limits = c(-5, 8),oob = squish) +
+  scale_color_gradientn(colors = c("#01665e", "#f7f7f7", "#b35806"),values = rescale(c(-5, 0, 8)),limits = c(-5, 8),oob = squish) +
+  scale_alpha(range = c(0.3, 1), guide = "none") +
+  theme(plot.title = element_text(hjust = 0.5, size = 20, face = "bold"),
+        plot.subtitle = element_text(hjust = 0.5, size = 15),
+        axis.title = element_text(size = 20),
+        axis.text= element_text(size =18),
+        legend.position = "right") +
+  geom_smooth(method = "lm", formula = y ~ x, linetype = 0) +
+  geom_hline(yintercept = 0, color = "grey40") +
+  geom_vline(xintercept = 0, color = "grey40")+
+  geom_abline(slope = 1, intercept = 0, linetype = "dotted", color = "grey40")
+
+p1_scatter_asd_sex
+
+# ===============================
+# Heatmaps for specific gene lists
+# ===============================
+
+p_heatmap_autismrisk = specific_gene_heatmap(CCA1_weights, combined_autism_genes$`Combined Autism`)
+
+p_heatmap_sfari = specific_gene_heatmap(CCA1_weights, SFARI_genes$`Autism - SFARI Score 1`)
+
+p_heatmap_y = specific_gene_heatmap(CCA1_weights, y_genes_nopar)
+
+plot_grid(p_heatmap_autismrisk,p_heatmap_y, ncol=1)
+
+# ===============================
+#FGSEA on mean of gene scores for gene ontology, risk genes, and sex-chromosome genes
+# ===============================
+
+# #Order gene list by the mean score of sex and autism 
+# ranked_gene_list_joint = CCA1_weights$mean_score
+# names(ranked_gene_list_joint)= CCA1_weights$gene
+# ranked_gene_list_joint = ranked_gene_list_joint[order(ranked_gene_list_joint, decreasing=T)]
+# 
+# #Join all gene lists we want to test 
+#gene_lists = c(GO_terms,riskgene_pathways,sex_chromosome_genes)
+# 
+# fgseaRes_mean <- fgsea(pathways = gene_lists, stats    = ranked_gene_list_joint,eps = 0.0,nPermSimple = 10000)
+
+fgseaRes_mean <- readRDS(
+  "/vf/users/HGBomics/GabiDugan/OxCam/Human.Transcriptomics/Key_Figures/Redraft_April2026/CCA1 Characterization/fgseaRes_mean_fullPATH"
+) %>%
+  mutate(dataset = case_when(
+    pathway %in% names(riskgene_pathways)    ~ "Risk",
+    pathway %in% names(sex_chromosome_genes) ~ "Sex-Chromosome Genes",
+    TRUE                                     ~ "GO"
+  ),
+  Direction         = factor(ifelse(NES < 0, "Negative", "Positive"),
+                             levels = c("Positive", "Negative")))
+
+fgseaRes_mean = as.data.frame(fgseaRes_mean)
+
+# WriteXLS(x = fgseaRes_mean,ExcelFileName = "Sex_Autism_CCA1_suptable.xlsx", SheetNames = "Enrichments")
+# WriteXLS(x = CCA1_weights,ExcelFileName = "CCA1_scores_sex_autism.xlsx", SheetNames = "Gene Scores")
+# WriteXLS(x = CCA1_weights_auto,ExcelFileName = "CCA1_auto_scores_sex_autism.xlsx", SheetNames = "Gene Scores")
+
+#G0 enrichments
+sig_go_specific <- fgseaRes_mean %>%
+  dplyr::filter(dataset == "GO") %>%
+  dplyr::left_join(go_terms_df, by = "pathway") %>%
+  dplyr::mutate(category = ifelse(is.na(category), "Other", category)) %>%
+  dplyr::filter(category == "Biological Process", padj < 0.05)
+
+top10_pathways <- bind_rows(
+  sig_go_specific %>% group_by(category) %>% slice_max(order_by = NES, n = 8),
+  sig_go_specific %>% group_by(category) %>% slice_min(order_by = NES, n = 8)
+) %>%
+  ungroup() %>%
+  mutate(term = sub(".*: ", "", pathway))
+
+cutdown_top10 <- sig_go_specific %>%
+  dplyr::filter(name %in% top10_pathways$name) %>%
+  dplyr::mutate(
+    significant      = padj < 0.05,
+    color_significant = ifelse(significant, "black", NA),
+    Direction         = factor(ifelse(NES < 0, "Negative", "Positive"),
+                               levels = c("Positive", "Negative"))
+  ) %>%
+  dplyr::arrange(desc(NES)) %>%
+  dplyr::mutate(name = factor(name, levels = rev(unique(name))))
+
+#Risk genes enrichments
+risk_specific <- fgseaRes_mean %>%
+  dplyr::filter(dataset == "Risk",
+                !grepl("Rare",pathway)) %>%
+  mutate(name = str_wrap(pathway, width = 30))
+
+risk_specific <- risk_specific %>% filter(name %in% str_wrap(pathway_order, width =30))
+
+fgsea_f <- bind_rows(cutdown_top10, risk_specific) %>%
+  mutate(
+    significant = padj < 0.05,
+    name = str_wrap(name, width = 30)
+  )
+
+go_order <- fgsea_f %>% filter(dataset == "GO") %>% arrange(NES) %>% pull(name)
+
+fgsea_f <- fgsea_f %>%
+  mutate(
+    name    = factor(name, levels = c(str_wrap(pathway_order, width =30), go_order)),
+    dataset = factor(dataset, levels = c("Risk", "GO"))
+  )
+
+lapply(fgsea_f$leadingEdge[grepl("Schizo",fgsea_f$pathway)],function(x) { 
+  table(x %in% combined_autism_genes$`Combined Autism`)}
+)
+
+fgsea_f_neg = fgsea_f[fgsea_f$Direction =="Negative",]
+
+p2_enrichmentdotplot_neg <- ggplot(fgsea_f_neg, aes(x = name, y = NES)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey50", linewidth = 0.4) +
+  geom_segment( aes(x=name, xend=name, y=0, yend=NES, color = significant)) +
+  geom_point(aes(size = -log10(padj), fill = NES, color = significant), shape = 21, stroke = 1.5) +
+  scale_fill_gradient2(low = "#01665e", mid = "#f7f7f7", high = "#b35806", midpoint = 0) +
+  scale_color_manual(values = c("TRUE" = "black", "FALSE" = "white")) +
+  facet_wrap(~dataset, scales = "free_x", space="free_x") +
+  scale_size_continuous(name = expression(-log10(`FDR q`)), range = c(5, 20)) +
+  ylim(-3, 3) +
+  theme_cowplot() +
+  theme(
+    axis.text.x        = element_text(angle = 40, hjust = 1, size = 16),
+    axis.text.y        = element_text(size = 18),
+    axis.title         = element_text(size = 20),
+    plot.margin        = margin(t = 10, r = 10, b = 20, l = 40, unit = "pt"),
+    panel.grid.major.x = element_line(color = "grey92"),
+    panel.grid.minor   = element_blank(),
+    plot.title         = element_text(hjust = 0.5, size = 20, face = "bold"),
+    legend.position    = "right"
+  )
+p2_enrichmentdotplot_neg
+
+fgsea_f_pos = fgsea_f[fgsea_f$Direction =="Positive",]
+
+p3_enrichmentdotplot_pos <- ggplot(fgsea_f_pos, aes(x = name, y = NES)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey50", linewidth = 0.4) +
+  geom_segment( aes(x=name, xend=name, y=0, yend=NES, color = significant)) +
+  geom_point(aes(size = -log10(padj), fill = NES, color = significant), shape = 21, stroke = 1.5) +
+  scale_fill_gradient2(low = "#01665e", mid = "#f7f7f7", high = "#b35806", midpoint = 0) +
+  scale_color_manual(values = c("TRUE" = "black", "FALSE" = "white")) +
+  facet_wrap(~dataset, scales = "free_x", space="free_x") +
+  scale_size_continuous(name = expression(-log10(`FDR q`)), range = c(5, 20)) +
+  ylim(-3, 3) +
+  theme_cowplot() +
+  theme(
+    axis.text.x        = element_text(angle = 40, hjust = 1, size = 16),
+    axis.text.y        = element_text(size = 18),
+    axis.title         = element_text(size = 20),
+    plot.margin        = margin(t = 10, r = 10, b = 20, l = 40, unit = "pt"),
+    panel.grid.major.x = element_line(color = "grey92"),
+    panel.grid.minor   = element_blank(),
+    plot.title         = element_text(hjust = 0.5, size = 20, face = "bold"),
+    legend.position    = "right"
+  )
+
+# ===============================
+# Plot
+# ===============================
+plot_grid(p1_scatter_asd_sex, NULL, plot_grid(p2_enrichmentdotplot_neg+NoLegend(),p3_enrichmentdotplot_pos, ncol=2, rel_widths =c(1,0.6), align = "h", axis="bt"), ncol=1, rel_heights =c(1,0.01,0.7), axis="lr")
+
+
+
+
+
+
+
+
+
