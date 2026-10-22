@@ -1,1 +1,123 @@
+# =============================================================================
+# Read in CCA results
+# =============================================================================
+
+rcca_sex_autism = readRDS("~/rcca_sex_autism")
+rcca_sex_schizophrenia = readRDS("~/rcca_sex_schizophrenia")
+matrix1 = readRDS("~/matrix1")
+matrix2_asd = readRDS("~/matrix2")
+
+# =============================================================================
+# Sex & Autism Derive confidence interval, so I can calculate difference of difference
+# =============================================================================
+
+set.seed(42)
+X_data <- matrix1
+Y_data <- matrix2_asd
+
+R <- 1000
+n <- nrow(X_data)  
+boot_correlations <- numeric(R)
+boot_celltypeweights_sex <- list()
+boot_celltypeweights_autism <- list()
+for (i in 1:R) {
+  
+  row_indices <- sample(1:n, replace = TRUE)
+  
+  X_resample <- X_data[row_indices, , drop = FALSE]
+  Y_resample <- Y_data[row_indices, , drop = FALSE]
+  
+  fit <- tryCatch(
+    rcc(X_resample, Y_resample, lambda1 = 0.1, lambda2 = 0.1),
+    error = function(e) NULL
+  )
+  
+  boot_correlations[i] <- if (!is.null(fit)) fit$cor[1] else NA_real_
+  boot_celltypeweights_sex[[i]] <-  if (!is.null(fit)) fit$xcoef[,1] else NA_real_
+  boot_celltypeweights_autism[[i]] <-  if (!is.null(fit)) fit$ycoef[,1] else NA_real_
+}
+
+boot_correlations <- na.omit(boot_correlations)
+mean_cor <- mean(boot_correlations)
+ci_lower <- quantile(boot_correlations, 0.025)
+ci_upper <- quantile(boot_correlations, 0.975)
+#ci_upper-ci_lower #0.09543458 
+
+CCA1_results_sex_autism = data.frame("CCA1" = rcca_sex_autism$CCA_results.cor[1],"Lower" = ci_lower, "Upper" =  ci_upper)
+CCA1_results_sex_autism$comparison = "Sex & Autism"
+
+# =============================================================================
+# Sex & Schizophrenia: Derive confidence interval, so I can calculate difference of difference
+# =============================================================================
+matrix1 = readRDS("~/matrix1_sex_scz")
+matrix2_scz = readRDS("~/matrix2_sex_scz")
+
+X_data <- matrix1
+Y_data <- matrix2_scz
+
+R <- 1000
+n <- nrow(X_data) 
+
+boot_correlations_sex_schizophrenia <- numeric(R)
+
+for (i in 1:R) {
+  
+  row_indices <- sample(1:n, replace = TRUE)
+  
+  X_resample <- X_data[row_indices, , drop = FALSE]
+  Y_resample <- Y_data[row_indices, , drop = FALSE]
+  
+  fit <- tryCatch(
+    rcc(X_resample, Y_resample, lambda1 = 0.1, lambda2 = 0.1),
+    error = function(e) NULL
+  )
+  
+  boot_correlations_sex_schizophrenia[i] <- if (!is.null(fit)) fit$cor[1] else NA_real_
+}
+
+boot_correlations_sex_schizophrenia <- na.omit(boot_correlations_sex_schizophrenia)
+
+mean_cor <- mean(boot_correlations_sex_schizophrenia)
+ci_lower <- quantile(boot_correlations_sex_schizophrenia, 0.025)
+ci_upper <- quantile(boot_correlations_sex_schizophrenia, 0.975)
+# ci_upper- ci_lower #0.07667765 
+
+CCA1_results_sex_schizophrenia = data.frame("CCA1" = rcca_sex_schizophrenia$CCA_results.cor[1],"Lower" = ci_lower, "Upper" =  ci_upper)
+
+CCA1_results_sex_schizophrenia$comparison = "Sex & Schizophrenia"
+
+# =============================================================================
+# Difference of difference tests: Comparison of CCA1 values
+# =============================================================================
+
+CCA1_compare = rbind(CCA1_results_sex_autism, CCA1_results_sex_schizophrenia)
+
+CCA1_compare$logCCA1 = log(CCA1_compare$CCA1)
+
+CCA1_compare$SE_logCCA1 = (log(CCA1_compare$Upper) - log(CCA1_compare$Lower)) / (2 * 1.96)
+
+logCCA1_diff = CCA1_compare$logCCA1[1] - CCA1_compare$logCCA1[2]
+
+SE_diff = sqrt(CCA1_compare$SE_logCCA1[1]^2 + CCA1_compare$SE_logCCA1[2]^2)
+
+z.score = logCCA1_diff / SE_diff
+p.value = 2 * (1 - pnorm(abs(z.scCCA1e)))
+
+# p.value
+# [1] 1.322647e-08
+# > z.score
+# [1] 5.683113
+
+
+CCA1_compare$SE_CCA1= (CCA1_compare$Upper - CCA1_compare$Lower) / (2 * 1.96)
+
+CCA1_diff = CCA1_compare$CCA1[1] - CCA1_compare$CCA1[2]
+SE_diff = sqrt(CCA1_compare$SE_CCA1[1]^2 + CCA1_compare$SE_CCA1[2]^2)
+
+# z.score
+# [1] 5.019254
+# > p.value
+# [1] 5.187251e-07
+
+
 
