@@ -1,0 +1,155 @@
+setwd()
+
+# =============================================================================
+# Read in Data & Sex Chromosome Genes
+# =============================================================================
+
+#DGE Results
+sex_dge <- readRDS("/gpfs/gsfs12/users/HGBomics/GabiDugan/OxCam/Human.Transcriptomics/Sex_ASD/Full_CT_BR/rCCA/Redo_114/sex_dge") #Sex
+
+asd_dge <- read_xlsx("~/Data_S1_CELLTYPE-SPECIFIC_RAW_DEG.xlsx", col_names = TRUE) #Autism
+is_date <- grepl("^\\d{1,2}/\\d{1,2}/\\d{4}$",asd_dge$gene)
+asd_dge <- asd_dge[!is_date, ]
+
+names = excel_sheets(path = "~/Copy_SCZ_Suptable4_DGE_results.xlsx") #Schizophrenia
+scz_dge<- list()
+for(i in names){
+  scz_dge[[i]] <- read_xlsx("~/Copy_SCZ_Suptable4_DGE_results.xlsx", col_names = TRUE, sheet = i)
+  scz_dge[[i]]$Celltype = i
+}
+
+SCZ_dge = Reduce(rbind,scz_dge)
+
+# =============================================================================
+# Run CCA across the three DGE results
+# =============================================================================
+
+
+RCCA_function = function(dge1, dge2, logFCvector1, logFCvector2, celltype_colname1, celltype_colname2){
+  
+  #Genes must be tested in both datasets to be included in the analysis
+  shared_genes <- intersect(dge1$gene,dge2$gene)
+  
+  #Reformat matrices to be only matching genes
+  reshaped_data_1 <- dge1 %>%
+    dplyr::filter(gene %in% shared_genes) %>%
+    dplyr::select(gene, celltype_colname1, logFCvector1) %>%
+    tidyr::pivot_wider(names_from = celltype_colname1, values_from = logFCvector1)
+  
+  matrix1 <- as.matrix(reshaped_data_1[, -1])  
+  rownames(matrix1) <- reshaped_data_1$gene   
+  
+  reshaped_data_2 <- dge2 %>%
+    dplyr::filter(gene %in% shared_genes) %>%
+    dplyr::select(gene, celltype_colname2, logFCvector2) %>%
+    tidyr::pivot_wider(names_from = celltype_colname2, values_from = logFCvector2)
+  
+  matrix2 <- as.matrix(reshaped_data_2[, -1]) 
+  rownames(matrix2) <- reshaped_data_2$gene    
+  
+  matrix1 <- matrix1[rownames(matrix2),]
+  
+  # Grid optimization for lambda parameteres
+  lambda1_grid <- seq(0.1, 1, by = 0.1)
+  lambda2_grid <- seq(0.1, 1, by = 0.1)
+  
+  best_lambda1 <- 0
+  best_lambda2 <- 0
+  best_correlation <- -Inf
+  
+  table(rownames(matrix1) ==rownames(matrix2))
+  
+  for (lambda1 in lambda1_grid) {
+    for (lambda2 in lambda2_grid) {
+      rcca_result <- CCA::rcc(matrix1, matrix2, lambda1 = lambda1, lambda2 = lambda2)
+      
+      # For comparison use the mean correlationa cross the components
+      correlation <- mean(rcca_result$cor)
+      
+      if (correlation > best_correlation) {
+        best_lambda1 <- lambda1
+        best_lambda2 <- lambda2
+        best_correlation <- correlation
+      }
+    }
+  }
+  
+  cat("Best lambda1:", best_lambda1, "\n")
+  cat("Best lambda2:", best_lambda2, "\n")
+  cat("Best canonical correlation:", best_correlation, "\n")
+  
+  optimal_rcca <- CCA::rcc(matrix1, matrix2, lambda1 = best_lambda1, lambda2 = best_lambda2)
+  
+  return(list = c("CCA_results" = optimal_rcca,
+                  "lambda_values"= c(best_lambda1,best_lambda2)
+  )
+  )
+  
+}
+
+rcca_sex_autism = RCCA_function(dge1 = sex_dge, dge2= asd_dge, "logFC","logFC_ASD_vs_CTL","BR_CellType","CELL TYPE")
+rcca_sex_schizophrenia = RCCA_function(dge1 = sex_dge, dge2= SCZ_dge, "logFC","Meta_logFC","BR_CellType","Celltype")
+rcca_autism_schizophrenia = RCCA_function(dge1 = asd_dge, dge2= SCZ_dge, "logFC_ASD_vs_CTL","Meta_logFC","CELL TYPE","Celltype")
+
+#Remove sex-chromosome genes from DGE 
+sex_dge_auto = sex_dge[!sex_dge$gene %in% xy_genes_nopar,]
+asd_dge_auto = asd_dge[!asd_dge$gene %in% xy_genes_nopar,]
+SCZ_dge_auto = SCZ_dge[!SCZ_dge$gene %in% xy_genes_nopar,]
+
+
+rcca_sex_autism_auto = RCCA_function(dge1 = sex_dge_auto, dge2= asd_dge_auto, "logFC","logFC_ASD_vs_CTL","BR_CellType","CELL TYPE")
+rcca_sex_schizophrenia_auto = RCCA_function(dge1 = sex_dge_auto, dge2= SCZ_dge_auto, "logFC","Meta_logFC","BR_CellType","Celltype")
+rcca_autism_schizophrenia_auto = RCCA_function(dge1 = asd_dge_auto, dge2= SCZ_dge_auto, "logFC_ASD_vs_CTL","Meta_logFC","CELL TYPE","Celltype")
+
+rcca_autism_schizophrenia_auto = readRDS("/gpfs/gsfs12/users/HGBomics/GabiDugan/OxCam/Human.Transcriptomics/Key_Figures/rcca_autism_schizophrenia_auto")
+
+rcca_sex_schizophrenia = readRDS("/gpfs/gsfs12/users/HGBomics/GabiDugan/OxCam/Human.Transcriptomics/Key_Figures/rcca_sex_schizophrenia")
+
+rcca_sex_autism_auto = readRDS("/gpfs/gsfs12/users/HGBomics/GabiDugan/OxCam/Human.Transcriptomics/Key_Figures/rcca_sex_autism_auto")
+
+rcca_sex_schizophrenia_auto = readRDS("/gpfs/gsfs12/users/HGBomics/GabiDugan/OxCam/Human.Transcriptomics/Key_Figures/rcca_sex_schizophrenia_auto")
+
+rcca_sex_autism = readRDS("/gpfs/gsfs12/users/HGBomics/GabiDugan/OxCam/Human.Transcriptomics/Key_Figures/rcca_sex_autism")
+
+rcca_sex_autism_rand = list()
+
+for(i in 1:1000){
+  
+  rand_genes = sample(unique(sex_dge$gene),size = length(xy_genes_nopar))
+  
+  #Randomly sample the same number of genes that were removed
+  sex_dge_rand = sex_dge[!sex_dge$gene %in% rand_genes,]
+  asd_dge_rand = asd_dge[!asd_dge$gene %in% rand_genes,]
+  
+  #Genes must be tested in both datasets to be included in the analysis
+  shared_genes <- intersect(sex_dge_rand$gene,asd_dge_rand$gene)
+  
+  #Reformat matrices to be only matching genes
+  reshaped_data_1 <- sex_dge_rand %>%
+    dplyr::filter(gene %in% shared_genes) %>%
+    dplyr::select(gene, BR_CellType, logFC) %>%
+    tidyr::pivot_wider(names_from = BR_CellType, values_from = logFC)
+  
+  matrix2 <- as.matrix(reshaped_data_1[, -1])  
+  rownames(matrix2) <- reshaped_data_1$gene   
+  
+  reshaped_data_2 <- asd_dge_rand %>%
+    dplyr::filter(gene %in% shared_genes) %>%
+    dplyr::select(gene, `CELL TYPE` , logFC_ASD_vs_CTL) %>%
+    tidyr::pivot_wider(names_from = `CELL TYPE` , values_from = logFC_ASD_vs_CTL)
+  
+  matrix1 <- as.matrix(reshaped_data_2[, -1]) 
+  rownames(matrix1) <- reshaped_data_2$gene    
+  
+  matrix1 <- matrix1[rownames(matrix2),]
+  
+  rcca_sex_autism_rand[[i]] = CCA::rcc(matrix1, matrix2, lambda1 = 0.1, lambda2 = 0.1)
+  
+}
+
+first_cor_randperm <- sapply(rcca_sex_autism_rand, function(x) x$cor[1])
+
+mean(first_cor_randperm)
+
+rcca_sex_autism$CCA_results.cor[1]
+
