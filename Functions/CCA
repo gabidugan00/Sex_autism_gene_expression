@@ -1,0 +1,328 @@
+library(zenith)
+library(dplyr)
+library(GO.db)
+library(readxl)
+library(stringr)
+
+annotate_broad_celltype_sex <- function(celltype) {
+  dplyr::case_when(
+    celltype %in% c("L23IT","L4IT","L5IT","L56NP","L6IT","L6b","L6CT",
+                    "L5ET/ L6IT","L6CT / L5IT","L23IT/ L5IT") ~ "ExcNeu",
+    celltype %in% c("VIP","PVALB","SST","LAMP5","ADARB2","PAX6",
+                    "Chandelier","Sncg") ~ "InhNeu",
+    celltype %in% c("Astro") ~ "Astro",
+    celltype %in% c("Micro") ~ "Micro",
+    celltype %in% c("Oligo","OPC") ~ "Oligo/OPC",
+    celltype %in% c("BEC") ~ "NeuVasc",
+    TRUE ~ NA_character_
+  )
+}
+
+annotate_broad_celltype_autism <- function(celltype) {
+  dplyr::case_when(
+    celltype %in% c("EXT_6_L23","EXT_3_L23","EXT_11_L34","EXT_10_L34",
+                    "EXT_1_L4","EXT_13_L45","EXT_14_L5B","EXT_4_L56",
+                    "EXT_7_L2356","EXT_5_L56","EXT_2_L56","EXT_12_L56",
+                    "EXT_8_L6","EXT_9_L6") ~ "ExcNeu",
+    celltype %in% c("INT_5_SST","INT_2_PV_SULF","INT_6_PV",
+                    "INT_1_KIT","INT_3_RELN_ND","INT_4_VIP_CR") ~ "InhNeu",
+    celltype %in% c("ASTRO_1","ASTRO_2","ASTRO_3") ~ "Astro",
+    celltype %in% c("MG1","MG2","BBB_MG3") ~ "Micro",
+    celltype %in% c("ODC_1","ODC_2","ODC_3",
+                    "OPCS_1","OPCS_2","OPCS_3","OPCS_4") ~ "Oligo/OPC",
+    celltype %in% c("BBB_Endo_1","BBB_Pericytes","BBB_SM(Mural)") ~ "NeuVasc",
+    TRUE ~ NA_character_
+  )
+}
+annotate_brainregion_short <- function(brainregion) {
+  dplyr::recode(
+    brainregion,
+    "Angular_Gyrus" = "AngGyr",
+    "Caudal_Insula" = "CauIns",
+    "Fusiform_Gyrus" = "FusGyr",
+    "Inferior_Lateral_TemporalOccipital" = "InfLTO",
+    "Intraparietal_sulcus" = "IntParSul",
+    "Retrosplenial_cortex" = "RetCor",
+    "PFC" = "PFC"
+  )
+}
+
+prepare_observed_strcor <- function(strcor_df,
+                                    dataset,
+                                    brainregion = NULL,
+                                    annotator_fn) {
+  df <- data.frame(
+    StrCor = as.numeric(strcor_df[,1]),
+    Celltype = rownames(strcor_df),
+    Dataset =dataset ,
+    stringsAsFactors = FALSE
+  )
+  
+  if (!is.null(brainregion)) {
+    df$brainregion <- brainregion
+  } else {
+    df$brainregion <- sub(".*\\.", "", df$Celltype)
+    df$Celltype <- sub("\\..*", "", df$Celltype)
+  }
+  
+  df$broad_celltype <- annotator_fn(df$Celltype)
+  df$Brainregion_short <- annotate_brainregion_short(df$brainregion)
+  
+  df
+}
+
+
+scatter_specific_genes_cca = function(CCA_weights, 
+                                      genelists, 
+                                      color_variable = "SC", 
+                                      colors_vector,
+                                      alpha_vector,
+                                      size_vector,
+                                      shape_vector,
+                                      color_label, 
+                                      title) {
+  df <- CCA_weights
+  
+  df[[color_variable]] <- "Default"  
+  
+  for (i in names(genelists)) {
+    df[[color_variable]][df$gene %in% genelists[[i]]] <- i
+  }
+  
+  df[[color_variable]] <- factor(df[[color_variable]], levels = names(colors_vector))
+  
+  p_scatter <- ggplot(df, aes(x = CCA1_Score_Sex, y = CCA1_Score_ASD)) +
+    theme_minimal() +
+    geom_point(aes(color = .data[[color_variable]], alpha = .data[[color_variable]],  size = .data[[color_variable]], fill = .data[[color_variable]])) +
+    geom_text_repel(data = df[df[[color_variable]] != "Default", ],aes(label = gene, color = .data[[color_variable]]),size = 5,max.overlaps = 30,box.padding = 0.3) +
+    labs(title =title,x = "Sex Score",y = "Autism Score",color = color_label) +
+    scale_color_manual(values = colors_vector) +
+    scale_fill_manual(values = colors_vector) +
+    scale_alpha_manual(values = alpha_vector) +
+    scale_size_manual(values = size_vector) +
+    scale_shape_manual(values = shape_vector) +
+    theme(plot.title = element_text(hjust = 0.5, size = 30, face = "bold"),plot.subtitle = element_text(hjust = 0.5, size = 15)) +
+    geom_smooth(method = "lm", formula = y ~ x, linetype = 0) +
+    geom_hline(yintercept = 0, color = "grey40") +
+    geom_vline(xintercept = 0, color = "grey40") +
+    geom_abline(slope = 1, intercept = 0, linetype = "dotted", color = "grey40")
+  
+  return(p_scatter)
+}
+
+scatter_specific_genes_cca_onlylabel = function(CCA_weights, 
+                                                genelists, 
+                                                alpha_variable = "SC", 
+                                                color_variable = "mean_score",
+                                                alpha_vector,
+                                                size_vector,
+                                                shape_vector,
+                                                color_label, 
+                                                title) {
+  df <- CCA_weights
+  
+  df[[alpha_variable]] <- "Default"  
+  
+  for (cat in names(genelists)) {
+    df[[alpha_variable]][df$gene %in% genelists[[cat]]] <- cat
+  }
+  
+  p_scatter <- ggplot(df, aes(x = CCA1_Weight_Sex, y = CCA1_Weight_ASD)) +
+    theme_minimal() +
+    geom_point(aes(color=.data[[color_variable]], fill=.data[[color_variable]],alpha = .data[[alpha_variable]],  size = .data[[alpha_variable]], shape =.data[[alpha_variable]] )) +
+    scale_color_gradientn(colors = c("#01665e", "#f7f7f7", "#b35806"),values = rescale(c(-5, 0, 8)),limits = c(-5, 8),oob = squish) +
+    scale_fill_gradientn(colors = c("#01665e", "#f7f7f7", "#b35806"),values = rescale(c(-5, 0, 8)),limits = c(-5, 8),oob = squish) +
+    geom_text_repel(data = df[df[[alpha_variable]] != "Default", ],aes(label = gene, color = .data[[color_variable]]),size = 5,max.overlaps = 30,box.padding = 0.3) +
+    labs(title =title,x = "Sex Score",y = "Autism Score",color = color_label) +
+    scale_alpha_manual(values = alpha_vector) +
+    scale_size_manual(values = size_vector) +
+    scale_shape_manual(values = shape_vector) +
+    theme(plot.title = element_text(hjust = 0.5, size = 30, face = "bold"),plot.subtitle = element_text(hjust = 0.5, size = 15)) +
+    geom_smooth(method = "lm", formula = y ~ x, linetype = 0) +
+    geom_hline(yintercept = 0, color = "grey40") +
+    geom_vline(xintercept = 0, color = "grey40") +
+    geom_abline(slope = 1, intercept = 0, linetype = "dotted", color = "grey40")
+  
+  return(p_scatter)
+}
+
+specific_gene_heatmap = function(CCA1_weights_df, genelist){
+  
+  subset_df <- CCA1_weights_df[CCA1_weights_df$gene %in% genelist,]
+  
+  median_score = data.frame(lapply(subset_df[,c("CCA1_Weight_Sex","CCA1_Weight_ASD","mean_score")], median))
+  median_score = pivot_longer(median_score, col=c("CCA1_Weight_Sex","CCA1_Weight_ASD","mean_score"))
+  
+  subset_df = pivot_longer(subset_df, col=c("CCA1_Weight_Sex","CCA1_Weight_ASD","mean_score"))
+  
+  subset_df$median_score = median_score$value[match(subset_df$name,median_score$name)]
+  subset_df$name = sub("CCA1_Weight_ASD","Median\nAutism\nScore",subset_df$name)
+  subset_df$name = sub("CCA1_Weight_Sex","Median\nSex\nScore",subset_df$name)
+  subset_df$name = sub("mean_score","Median\nCombined\nScore",subset_df$name)
+  
+  subset_df$name  = factor(subset_df$name, levels =c("Median\nSex\nScore","Median\nAutism\nScore","Median\nCombined\nScore"))
+  
+  p = ggplot(subset_df, aes(x = name,y =1, fill = median_score)) +
+    theme_cowplot() +
+    geom_tile() +
+    labs(title = "",x = "CCA1 Score List", y = "", fill="Median Score") +
+    scale_fill_gradientn(colors = c("#01665e", "#f7f7f7", "#b35806"),values = rescale(c(-5, 0, 8)),limits = c(-5, 8),oob = squish) +
+    theme(plot.title = element_text(hjust = 0.5, size = 20, face = "bold"),
+          plot.subtitle = element_text(hjust = 0.5, size = 15),
+          axis.title = element_text(size = 15),
+          axis.text.x= element_text(size =12,angle =45, hjust =1),
+          axis.text.y= element_text(size=0),
+          legend.position = "right")
+  
+  return(p)
+  
+}
+
+annotate_broad_celltype_sex <- function(celltype) {
+  dplyr::case_when(
+    celltype %in% c("L23IT","L4IT","L5IT","L56NP","L6IT","L6b","L6CT",
+                    "L5ET/ L6IT","L6CT / L5IT","L23IT/ L5IT") ~ "ExcNeu",
+    celltype %in% c("VIP","PVALB","SST","LAMP5","ADARB2","PAX6",
+                    "Chandelier","Sncg") ~ "InhNeu",
+    celltype %in% c("Astro") ~ "Astro",
+    celltype %in% c("Micro") ~ "Micro",
+    celltype %in% c("Oligo","OPC") ~ "Oligo/OPC",
+    celltype %in% c("BEC") ~ "NeuVasc",
+    TRUE ~ NA_character_
+  )
+}
+
+annotate_broad_celltype_autism <- function(celltype) {
+  dplyr::case_when(
+    celltype %in% c("EXT_6_L23","EXT_3_L23","EXT_11_L34","EXT_10_L34",
+                    "EXT_1_L4","EXT_13_L45","EXT_14_L5B","EXT_4_L56",
+                    "EXT_7_L2356","EXT_5_L56","EXT_2_L56","EXT_12_L56",
+                    "EXT_8_L6","EXT_9_L6") ~ "ExcNeu",
+    celltype %in% c("INT_5_SST","INT_2_PV_SULF","INT_6_PV",
+                    "INT_1_KIT","INT_3_RELN_ND","INT_4_VIP_CR") ~ "InhNeu",
+    celltype %in% c("ASTRO_1","ASTRO_2","ASTRO_3") ~ "Astro",
+    celltype %in% c("MG1","MG2","BBB_MG3") ~ "Micro",
+    celltype %in% c("ODC_1","ODC_2","ODC_3",
+                    "OPCS_1","OPCS_2","OPCS_3","OPCS_4") ~ "Oligo/OPC",
+    celltype %in% c("BBB_Endo_1","BBB_Pericytes","BBB_SM(Mural)") ~ "NeuVasc",
+    TRUE ~ NA_character_
+  )
+}
+annotate_brainregion_short <- function(brainregion) {
+  dplyr::recode(
+    brainregion,
+    "Angular_Gyrus" = "AngGyr",
+    "Caudal_Insula" = "CauIns",
+    "Fusiform_Gyrus" = "FusGyr",
+    "Inferior_Lateral_TemporalOccipital" = "InfLTO",
+    "Intraparietal_sulcus" = "IntParSul",
+    "Retrosplenial_cortex" = "RetCor",
+    "PFC" = "PFC"
+  )
+}
+
+
+
+# ===============================
+# Read in data
+# ===============================
+#Sex and autism matrices that CCA was run on 
+matrix1 =readRDS("/vf/users/HGBomics/GabiDugan/OxCam/Human.Transcriptomics/Sex_ASD/Full_CT_BR/rCCA/Redo_114/matrix1")
+matrix2= readRDS("/vf/users/HGBomics/GabiDugan/OxCam/Human.Transcriptomics/Sex_ASD/Full_CT_BR/rCCA/Redo_114/matrix2")
+
+#rCCA with and without XY genes (including PAR)
+rcca_sex_schizophrenia =readRDS("/vf/users/HGBomics/GabiDugan/OxCam/Human.Transcriptomics/Key_Figures/rcca_sex_schizophrenia")
+rcca_sex_schizophrenia_auto = readRDS("/vf/users/HGBomics/GabiDugan/OxCam/Human.Transcriptomics/Key_Figures/rcca_sex_schizophrenia_auto")
+rcc.model_filtered_ASD =readRDS("/vf/users/HGBomics/GabiDugan/OxCam/Human.Transcriptomics/Key_Figures/rcca_sex_autism")
+rcc.model_filtered_ASD_auto = readRDS("/vf/users/HGBomics/GabiDugan/OxCam/Human.Transcriptomics/Key_Figures/rcca_sex_autism_auto")
+CCA1_weights <-read_xlsx("/vf/users/HGBomics/GabiDugan/OxCam/Human.Transcriptomics/Sex_ASD/Full_CT_BR/rCCA/Redo_114/CCA1_weights.xlsx")
+CCA1_weights_auto = read_xlsx("/vf/users/HGBomics/GabiDugan/OxCam/Human.Transcriptomics/Sex_ASD/Full_CT_BR/rCCA/Redo_114/CCA1_weights_auto.xlsx") 
+
+#Sex-chromosome genes as annotated 
+xy_genes = readRDS("/vf/users/HGBomics/GabiDugan/OxCam/Human.Transcriptomics/Key_Figures/Redraft_February2026/xy_genes")
+x_genes = readRDS("/vf/users/HGBomics/GabiDugan/OxCam/Human.Transcriptomics/Key_Figures/Redraft_February2026/x_genes")
+y_genes = readRDS("/vf/users/HGBomics/GabiDugan/OxCam/Human.Transcriptomics/Key_Figures/Redraft_February2026/y_genes")
+par_1_genes <- c("AKAP17A", "ASMTL", "ASMTL-AS1", "CD99", "CD99P1", "CRLF2", "CSF2RA", "DHRSX", "DHRSX-IT1", "FABP5P13", "GTPBP6", "IL3RA", "LINC00102", "LINC00106", "LINC00685", "MIR3690", "MIR6089", "PLCXD1", "PPP2R3B", "P2RY8", "SHOX", "SLC25A6", "XG", "ZBED1")
+par_2_genes <- c("AMD1P2", "DDX11L16", "DPH3P2", "IL9R", "SPRY3", "ELOCP24", "TRPC6P1", "VAMP7", "WASH6P", "WASIR1")
+xy_genes_nopar = xy_genes[!xy_genes %in% c(par_1_genes,par_2_genes)]
+x_genes_nopar = x_genes[!x_genes %in% c(par_1_genes,par_2_genes)]
+y_genes_nopar = y_genes[!y_genes %in% c(par_1_genes,par_2_genes)]
+sex_chromosome_genes = list("Y-Chr (no PAR)"= y_genes_nopar, "X-Chr (no PAR)" = x_genes_nopar, "PAR"= c(par_1_genes, par_2_genes))
+
+# ===============================
+# Risk genes
+# ===============================
+SFARI_genes <- read_xlsx("/vf/users/HGBomics/GabiDugan/OxCam/Human.Transcriptomics/SFARI-Gene_genes_07-08-2025release_09-26-2025export.xlsx",skip =1)
+
+SFARI_genes= list("Autism - SFARI Score 1"=SFARI_genes$`gene-symbol`[SFARI_genes$`gene-score`=="1"],"Autism - SFARI Score 2"=SFARI_genes$`gene-symbol`[SFARI_genes$`gene-score`=="2"])
+
+Fu_genes_list = list("Autism - Fu et al." = c("MED13", "NIPBL", "SMC3", "CNOT1", "BRD4", "FBN1", "XPO1", "PRR12", "SYNGAP1", "HDAC4", "SMARCA4", "AGO1", "ARHGAP35", "TRIP12", "KMT2E", "UBTF", "KDM3B", "TRRAP", "GRIN2B", "USP7", "ATP1A3",  "ASH1L", "MED13L", "KMT2A", "CREBBP", "KAT6A", "KMT2B", "SIN3A", "CHD2", "ARID1A", "SCN1A", "SPEN", "EHMT1", "TLE3", "UBR5", "PTCH1", "CHD7", "CNOT3", "AHDC1", "SUV420H1", "PHF21A", "HIVEP2", "DYNC1H1",  "CHD8", "WAC", "ZNF462", "WDR26", "STXBP1", "MN1", "MYT1L", "SPTBN1","SATB2", "EFTUD2", "TCF20", "DLL1", "NSD1", "SRCAP", "HNRNPK", "ARID2", "GATAD2B", "FBXO11", "NOTCH1", "TAB2", "EP300", "HDAC2", "SPTAN1", "CACNA1C", "ARID1B", "KMT2D", "ZNF148", "RFX3", "CLTC", "ANK2", "TBL1XR1", "ANKRD11", "PAFAH1B1", "ZEB2", "SETBP1", "NTRK2", "RORB", "PTPRD", "PHIP", "HNRNPU", "TLK2", "DHX30", "RAI1", "PIK3CA", "KIF5C", "SMARCC2", "SRRM2", "TSC1", "SON", "WHSC1", "STAG1","POGZ", "ZMYND11", "KIF11", "KMT2C", "ADNP", "SHANK3", "CACNA1E", "KCNB1", "NLGN2", "HECTD4", "SCN2A", "VCP", "COL4A1", "KAT6B", "CTNNB1", "SCN8A", "ZMYND8", "RFX7", "NR4A2", "U2AF2", "ITPR1",  "COL2A1", "CACNA1A", "PHF12", "CTR9", "PTPN11", "SETD1A", "KIF1A", "MBD5", "ZFHX3", "SHOC2", "TRIO", "KDM6B", "SOS1", "BAI1", "ZNF292", "CSNK1E", "SPOP", "ZFHX4", "GNB1", "ASXL2", "CHD3", "PPP1CB", "CTCF", "ATP2B2", "NFIX", "SLC6A1", "EBF3", "MAPK8IP3", "SETD1B", "CASZ1", "MARK2", "CHD4", "KCNQ2", "TANC2", "PPP3CA", "DPF2", "KIF2A", "UPF1", "ZNF865", "CASKIN1", "PAX5", "ARIH1", "GABBR2", "SOX9", "NACC1", "ACVR2A", "CAMTA1", "TFAP4", "TNRC6B", "CELF2","PPP2R5D", "FOXP1", "ABL1", "BRPF1", "PRPF8", "ZBTB18", "SET", "CIC", "MEIS2", "MTOR", "PACS1", "CTNND1", "EEF1A2", "SOX5", "GRIN2A", "DSCAM", "SMARCE1", "SKI", "TBR1", "GLI3", "GLYR1", "YY1", "ASXL3", "NFIA", "SMARCA2", "MORC2", "PDE4D", "UBE3A", "SETD2", "SYNCRIP", "SOX10", "BRAF", "CACNA1G", "MAP3K7", "RAB14", "DYRK1A", "FGFR1", "WDR48", "TCF4", "FOXP2", "SRP54", "SMARCB1", "AFF3", "SMAD4", "SF3B2", "SPAST", "NFIB", "SETD5", "HNRNPD", "CUL3", "PCBP2", "PIK3R1", "SNAP25", "FBXW7", "DLG4", "KANSL1","VEZF1", "CAMK2G", "SLC2A1", "SRSF1", "LONP1", "KLF7", "PUF60", "GRIA2", "TOP2B", "RYR2", "CAMK2A", "ZMIZ1", "DNM1", "AUTS2", "ADCY5", "NRXN1", "PBX1", "HECW2", "TRIM8", "EXT1", "ERF", "GNAO1", "CAMTA2", "PLXNA1", "PPP2CA", "MSI1", "GNB2", "ATP6V0A1", "RALA", "FGFR2", "CHAMP1", "TCF7L2", "TAOK1", "QRICH1", "KCNMA1", "BAP1",  "CTBP1", "PACS2", "KCND3", "NAA15", "BCL11B", "MFN2", "ATF2", "YWHAG", "ZBTB10", "NF1", "SATB1", "CSNK2A1", "PPP2R1A", "GLTSCR1",  "BICD2", "GRIN1", "CAPRIN1", "MAGEL2", "PIP5K1C", "BRD3", "ZBTB20",  "BCL11A", "CDK13", "ZBTB7A", "BRSK2", "FOXG1", "ZMYM2", "GSK3B", "HK1", "PUR A", "PSMC3", "GABRB3", "AP3B2", "KIDINS220", "CBX5", "PSMC5", "KCNQ3", "ATP6V1A", "DDX23", "COL4A3BP", "CAMK2B", "GABRA1", "PHLDB1", "TCF12", "GNAS", "KCNT2", "OTX2", "MAP2K1", "CTNNA2", "GNAI1", "KCNA2", "CSNK2B", "GABRB2", "KCNH1", "GATA3", "SRPR","GABRG2", "ARF1", "RORA", "IRF2BPL", "MYCN", "CDK8", "KIAA0100", "VAMP2", "POU3F3", "SOX11", "SYT1", "TRPM3", "TRAF7", "SHANK2", "SEMA6B", "RAC1", "KCNT1", "MSL2", "ABCC9", "GIGYF1", "PIK3R2","ATP1A2", "RHOBTB2", "TCF3", "MED23", "CDC42", "AP2S1", "DNM1L", "PTEN", "DHDDS", "KLHL20", "TNPO3", "NALCN", "PRKAR1B", "ODC1", "EIF5A", "SOX2", "KDM5B", "FGFR3", "MEF2C", "RAB11B", "ACTL6B", "RIT1", "DEAF1", "ASXL1", "POLR3B", "KBTBD7", "HRAS", "GFAP", "HIST1H2AC", "PPM1D", "H3F3A", "KRAS", "DNMT3A", "HIST1H1E", "HIST1H4J", "HIST1H2AE", "MIB1", "SMAD6", "LZTR1"))
+
+Satterstrom_genes_list = list("Autism - Sattestrom et al." = c("CHD8", "SCN2A", "SYNGAP1", "ADNP", "FOXP1", "POGZ", "ARID1B", "SUV420H1", "DYRK1A", "SLC6A1", "GRIN2B", "PTEN", "SHANK3", "MED13L",  "GIGYF1", "CHD2", "ANKRD11", "ANK2", "ASH1L", "TLK2", "DNMT3A", "DEAF1", "CTNNB1", "KDM6B", "DSCAM", "SETD5", "KCNQ3", "SRPR", "KDM5B", "WAC", "SHANK2", "NRXN1", "TBL1XR1", "MYT1L", "BCL11A", "RORB", "RAI1", "DYNC1H1", "DPYSL2", "AP2S1", "KMT2C", "PAX5", "MKX", "GABRB3", "SIN3A", "MBD5", "MAP1A", "STXBP1", "CELF4", "PHF12", "TBR1", "PPP2R5D", "TM9SF4", "PHF21A", "PRR12", "SKI", "ASXL3", "SPAST", "SMARCC2", "TRIP12", "CREBBP", "TCF4", "CACNA1E",  "GNAI1", "TCF20", "FOXP2", "NSD1", "TCF7L2", "LDB1", "EIF3G", "PHF2", "KIAA0232", "VEZF1", "GFAP", "IRF2BPL", "ZMYND8", "SATB1", "RFX3", "SCN1A", "PPP5C", "TRIM23", "TRAF7", "ELAVL3", "GRIA2",  "LRRC4C", "CACNA2D3", "NUP155", "KMT2E", "NR3C2", "NACC1", "PTK7", "PPP1R9B", "GABRB2", "HDLBP", "TAOK1", "UBR1", "TEK", "KCNMA1",  "CORO1A", "HECTD4", "NCOA1", "DIP2A"))
+
+Trubetskoy_Schizophrenia_riskgenes = list("Schizophrenia - Trubetskoy et al."= c("AC068490.2", "ACE", "ACTR1B", "AKT3", "ALMS1P", "ASPHD1", "ATG13", "ATP2A2", "BCL11B", "BCL2L12", "BNIP3L", "C12orf43", "CACNA1C", "CALN1", "CISD2", "CLCN3", "CNTN4", "CREB3L4", "CRHR1", "CSMD1", "CTD-2008L17.2", "CUL9", "CYP7B1", "DARS2", "DCC", "DCLK3", "DDHD2", "DLGAP2", "DNAJA3", "DPYD", "EMB", "EMX1", "ENOX1", "ENSG00000262319", "EPN2", "EYS", "FAM114A2", "FAM216A", "FAM83D", "FTSJ2", "FURIN", "GABBR2", "GATAD2A", "GPM6A", "GPR98", "GRAMD1B", "GRIN2A", "GRM1", "HYI", "IL1RAPL1", "IMMP2L", "INO80E", "IRF3", "KANSL1", "KIAA1549", "KLF6", "LINC00320", "LINC01068", "LINC01088", "LRRC4B", "LSM1", "MAD1L1", "MAN2A1", "MAPK3", "MAPT", "MLXIP", "MOB4", "MSI2", "MYO19", "NAB2", "NDFIP2", "NEBL", "NEGR1", "NLGN4X", "NRIP1", "NXPH1", "OPCML", "PAK6", "PCCB", "PCDHA2", "PCDHA8", "PCGF3", "PCNXL3", "PDE4B", "PDIA3", "PJA1", "PLCH2", "PSMA4", "PTPRD", "R3HDM2", "RERE", "RNASEH2C", "RP11-10L12.4", "RP11-165J3.6", "RP11-399D6.2", "RP11-490G2.2", "RP11-507B12.2", "RP11-53O19.3", "RP11-586K2.1", "RP11-73M18.2", "SETD6", "SF3B1", "SGCD", "SLC39A8", "SLC4A10", "SLC9B1", "SNAP91", "SP4", "THAP8", "THOC7", "TMTC1", "TRPC4", "TSNARE1", "TXNRD1", "WBSCR17", "WDR76", "WSCD2", "ZNF804A", "ZNF823", "ZNF835"))
+
+Singh_Schizophrenia_riskgenes = list("Schizophrenia - Singh et al."= c("TRIO","SP4","CUL1","RB1CC1","HERC1","GRIN2A","CACNA1G","GRIA3"))
+
+combined_autism_genes <-list("Combined Autism"= unique(c(SFARI_genes$`Autism - SFARI Score 1`,SFARI_genes$`Autism - SFARI Score 2`, Satterstrom_genes_list$`Autism - Sattestrom et al.`, Fu_genes_list$`Autism - Fu et al.`)))
+
+combined_schizophrenia_genes <-list("Combined Schizophrenia"= unique(c(Singh_Schizophrenia_riskgenes$`Schizophrenia - Singh et al.`, Trubetskoy_Schizophrenia_riskgenes$`Schizophrenia - Trubetskoy et al.`)))
+
+riskgene_pathways = c(SFARI_genes, Fu_genes_list, Satterstrom_genes_list,Trubetskoy_Schizophrenia_riskgenes,combined_autism_genes,Singh_Schizophrenia_riskgenes,combined_schizophrenia_genes)
+
+riskgene_pathways_removeoverlap = c(SFARI_genes, Fu_genes_list, Satterstrom_genes_list,Trubetskoy_Schizophrenia_riskgenes,"Combined Autism"= list(combined_autism_genes$`Combined Autism`[!combined_autism_genes$`Combined Autism` %in% combined_schizophrenia_genes$`Combined Schizophrenia`]),Singh_Schizophrenia_riskgenes,"Combined Schizophrenia"= list(combined_schizophrenia_genes$`Combined Schizophrenia`[!combined_schizophrenia_genes$`Combined Schizophrenia` %in% combined_autism_genes$`Combined Autism`]))
+
+table(combined_schizophrenia_genes$`Combined Schizophrenia` %in% combined_autism_genes$`Combined Autism`)
+# FALSE  TRUE 
+# 97    29 
+
+# AFTERFEEDBACK_riskgenepathways =
+
+
+#GO database
+go.gs = get_GeneOntology(to="SYMBOL")
+
+GO_terms <- list()
+for(i in 1:length(go.gs)){
+  GO_terms[[i]] <- go.gs[[i]]@geneIds
+}
+names(GO_terms) <- names(go.gs)
+
+go_ids <- keys(GO.db)
+categories <- sapply(GOTERM, function(x) {
+  if (!is.null(Ontology(x))) Ontology(x) else NA
+})
+
+names <- sapply(GOTERM, function(x) {
+  if (!is.null(Term(x))) Term(x) else NA
+})
+
+# Ensure all vectors are the same length
+stopifnot(length(go_ids) == length(categories), length(go_ids) == length(names))
+
+# Create the data frame
+go_terms_df <- data.frame(
+  pathway = go_ids,
+  category = categories,
+  name = names,
+  stringsAsFactors = FALSE
+) %>%
+  dplyr::filter(!is.na(category)) %>%
+  mutate(category = case_when(
+    category == "CC" ~ "Cellular Component",
+    category == "BP" ~ "Biological Process",
+    category == "MF" ~ "Molecular Function",
+    TRUE ~ "Other"
+  ))
+
+GO_ID_full <- sub(":","", go_terms_df$pathway)
+GO_ID <- sub(".*GO","", GO_ID_full)
+GO_ID_edit <- paste("GO", GO_ID, sep = "")
+GO_ID_edit <- paste(GO_ID_edit, go_terms_df$name, sep =": ")
+go_terms_df$pathway <- GO_ID_edit
+
+
+pathway_order = str_wrap(c( "Combined Autism","Autism - SFARI Score 1","Autism - SFARI Score 2",
+                            "Autism - Fu et al.",  "Autism - Sattestrom et al.", 
+                            "Combined Schizophrenia", "Schizophrenia - Trubetskoy et al.", "Schizophrenia - Singh et al."), width =20)
+
