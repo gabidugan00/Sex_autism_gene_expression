@@ -1,5 +1,5 @@
 # ============================================================
-# Panel 3: Chromosome of origin for overlapping DEGs
+# Chromosome of origin for overlapping DEGs
 # ============================================================
 
 annotate_chromosome <- function(df) {
