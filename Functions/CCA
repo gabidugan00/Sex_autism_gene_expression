@@ -1,8 +1,20 @@
-library(zenith)
-library(dplyr)
-library(GO.db)
-library(readxl)
-library(stringr)
+suppressPackageStartupMessages({
+  library(dplyr)
+  library(tidyverse)
+  library(stringr)
+  library(cowplot)
+  library(ggplot2)
+  library(readxl)
+  library(tibble)
+  library(WriteXLS)
+  library(ggrepel)
+  library(scales)
+  library(ggVennDiagram)
+  library(SuperExactTest)
+  library(clusterProfiler)
+  library(org.Hs.eg.db)
+})
+
 
 annotate_broad_celltype_sex <- function(celltype) {
   dplyr::case_when(
@@ -269,15 +281,6 @@ combined_autism_genes <-list("Combined Autism"= unique(c(SFARI_genes$`Autism - S
 combined_schizophrenia_genes <-list("Combined Schizophrenia"= unique(c(Singh_Schizophrenia_riskgenes$`Schizophrenia - Singh et al.`, Trubetskoy_Schizophrenia_riskgenes$`Schizophrenia - Trubetskoy et al.`)))
 
 riskgene_pathways = c(SFARI_genes, Fu_genes_list, Satterstrom_genes_list,Trubetskoy_Schizophrenia_riskgenes,combined_autism_genes,Singh_Schizophrenia_riskgenes,combined_schizophrenia_genes)
-
-riskgene_pathways_removeoverlap = c(SFARI_genes, Fu_genes_list, Satterstrom_genes_list,Trubetskoy_Schizophrenia_riskgenes,"Combined Autism"= list(combined_autism_genes$`Combined Autism`[!combined_autism_genes$`Combined Autism` %in% combined_schizophrenia_genes$`Combined Schizophrenia`]),Singh_Schizophrenia_riskgenes,"Combined Schizophrenia"= list(combined_schizophrenia_genes$`Combined Schizophrenia`[!combined_schizophrenia_genes$`Combined Schizophrenia` %in% combined_autism_genes$`Combined Autism`]))
-
-table(combined_schizophrenia_genes$`Combined Schizophrenia` %in% combined_autism_genes$`Combined Autism`)
-# FALSE  TRUE 
-# 97    29 
-
-# AFTERFEEDBACK_riskgenepathways =
-
 
 #GO database
 go.gs = get_GeneOntology(to="SYMBOL")
