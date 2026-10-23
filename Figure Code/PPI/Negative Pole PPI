@@ -1,0 +1,710 @@
+# ===============================
+# Generate PPI Networks of Top Genes from 0.05% Positive + Negative for Sex and Autism
+# ===============================
+
+number <- round(0.005 * length(rcc_sex_autism$CCA_results.scores$xscores[,1]))
+
+top_genes_sex = get_all_top_gene_subsets(CCA1_weights, score_col = "CCA1_Weight_Sex",top_n = number )
+
+top_genes_autism = get_all_top_gene_subsets(CCA1_weights, score_col = "CCA1_Weight_ASD",top_n = number )
+
+top_genes_mean = get_all_top_gene_subsets(CCA1_weights, score_col = "mean",top_n = number )
+
+# ===============================
+# Networks for (1) sex positive and negative (2) autism positive and negative (3) combined 
+# ===============================
+string_db <- STRINGdb$new(version="12", species=9606, 
+                          score_threshold=400, 
+                          input_directory="") 
+# string_db
+# ***********  STRING - https://string-db.org   ***********
+#   (Search Tool for the Retrieval of Interacting Genes/Proteins)  
+# version: 12.0
+# species: 9606
+# ............please wait............
+# proteins: 19699
+# interactions: 1858944
+
+sex_networks = list()
+autism_networks = list()
+combined_networks = list()
+for(i in names(top_genes_sex)){
+   sex_networks[[i]] = STRINGdb_networks(top_genes_sex[[i]], gene_column = "Gene")
+   autism_networks[[i]] = STRINGdb_networks(top_genes_autism[[i]], gene_column = "Gene")
+   combined_networks[[i]] = STRINGdb_networks(top_genes_mean[[i]], gene_column = "Gene")
+}
+
+#Degree connectedness for each gene from the PPI networks
+degree_all = readRDS("~/degree_all_PPI_networks")
+combined_networks = readRDS("~/PPI_combined_networks_full")
+
+#Full Combined networks - dataframe
+degree_Mean = degree_all[degree_all$Group=="Mean",]
+
+degree_Mean_df = data.frame("Gene"= unique(degree_Mean$Gene), "Degree" = degree_Mean$Degree, "Direction"=degree_Mean$Direction)
+
+CCA1_weights$Gene = CCA1_weights$gene
+
+degree_Mean_df= degree_Mean_df %>%
+  dplyr::left_join(CCA1_weights, by="Gene")
+
+degree_Mean_top = degree_Mean_df %>%
+  group_by(Direction) %>%
+  arrange(desc(Degree)) %>%
+  slice_head(n=10)
+
+degree_Mean_top = degree_Mean_top[order(-degree_Mean_top$Degree),]
+
+degree_Mean_top$Gene = factor(degree_Mean_top$Gene, levels= unique(degree_Mean_top$Gene))
+degree_Mean_top = degree_Mean_top[degree_Mean_top$Direction =="CCA1_down",]
+
+degree_Mean_top = degree_Mean_top %>%
+  dplyr::mutate(Gene = reorder(Gene, -Degree)) %>%
+  dplyr::ungroup()
+
+degree_Mean_top$Autism_Risk = "No"
+degree_Mean_top$Autism_Risk[degree_Mean_top$Gene %in% combined_autism_genes$`Combined Autism`] = "Yes"
+
+degree_Mean_neg = degree_Mean_df[degree_Mean_df$Direction == "CCA1_down",]
+
+degree_Mean_pos = degree_Mean_df[degree_Mean_df$Direction == "CCA1_up",]
+
+# ===============================
+# Panel 1 Negative PPI networks, annotated with DEGs
+# ===============================
+
+neg_mapped <- combined_networks$CCA1_down$Mapped %>%
+  distinct(gene, .keep_all = TRUE) %>% 
+  dplyr::mutate(Autism_Risk = gene %in%
+                  combined_autism_genes$`Combined Autism`,
+                x_chromosome = gene %in% x_genes,
+                y_chromosome = gene %in% y_genes,
+                DEG = gene %in% c(SEX_DEGs$gene,ASD_DEGs$gene))
+
+mapped_top005 = list("negative_mapped" = combined_networks$CCA1_down$Mapped$gene)
+
+graph_neg_tbl <- combined_networks$CCA1_down$Graph_df %>%
+  as_tbl_graph() %>%
+  left_join(neg_mapped, by = c("name" = "gene"))
+
+graph_neg_tbl <- graph_neg_tbl %>%
+  activate(nodes) %>%
+  
+  dplyr::mutate(
+    sex_hit     = name %in% SEX_DEGs$gene,
+    
+    autism_hit  = name %in% ASD_DEGs$gene, 
+    
+    x_chromosome     = name %in% x_genes,
+    
+    y_chromosome  = name %in% y_genes,
+    
+    Autism_Risk     = ifelse( name %in% combined_autism_genes$`Combined Autism`,"Yes","No"),
+    
+    fill_group = case_when(
+      sex_hit & autism_hit ~ "Shared DEG",
+      sex_hit            ~ "Sex DEG",
+      autism_hit           ~ "Autism DEG",
+      TRUE                 ~ "Other"),
+    
+    hub_genes = name %in% degree_Mean_top$Gene[degree_Mean_top$Direction == "CCA1_down"],
+    
+    sex_chromosome = case_when(
+      x_chromosome ~ "X-Linked",
+      y_chromosome ~ "Y-Linked",
+      TRUE         ~ "Autosomal"),
+    gene_degree = centrality_degree()
+  )
+
+graph_neg_tbl <- graph_neg_tbl %>%
+  mutate(is_autism_deg = ifelse(fill_group == "Autism DEG", "stripe", "none"))
+
+set.seed(2)
+p1_negnet <- ggraph(graph_neg_tbl, layout = "auto") +
+  geom_edge_link(alpha = 0.5, color ="#01665e") +
+  geom_node_point(aes(fill  = fill_group,color = Autism_Risk,shape = sex_chromosome,size  = gene_degree), stroke = 1.2) +
+  geom_node_text(aes(label = ifelse(hub_genes == "TRUE", name, ""), size = gene_degree ),repel = TRUE) +
+  scale_fill_manual(values = c("Shared DEG" = "#F0C674", "Autism DEG" ="#FDF198" , "Sex DEG" = "slateblue3"))+
+  scale_size_continuous(range  = c(1, 18),limits=c(0,60)) +
+  # scale_fill_gradient2(high = "#01665e", mid =  "#f7f7f7", low="white", midpoint =0) +
+  scale_color_manual(values = c(
+    "Yes" = "black",
+    "No"   ="lightgray")) +
+  scale_shape_manual(values = c(
+    "Autosomal" = 21,
+    "Y-Linked"  = 25,
+    "X-Linked"  = 23)) +
+  theme_void() +
+  labs(title = "Negative Pole Network", fill = "DEG", shape = "Location",
+       color = "Autism Risk Gene", size="Node Degree") +
+  theme(plot.title = element_text(size = 18, face = "bold", hjust = 0.5),plot.subtitle = element_text(size = 15, face = "bold", hjust = 0.5))
+
+p1_negnet
+
+string_db$plot_network(combined_networks$CCA1_down$Mapped$gene) #expected interactions = 14, interactions =159, p-value = 0
+length(combined_networks$CCA1_down$Mapped$gene)
+
+# writexl::write_xlsx(edge_list, "PPI_positive005ntwrk.xlsx")
+
+# ===============================
+# Autism risk gene connectedness and representation in the poles 
+# ===============================
+g_neg <- combined_networks$CCA1_down$Graph_df
+
+# PPI Network of all genes in CCA1 
+CCA1_weights = as.data.frame(CCA1_weights)
+
+all_mapped <- string_db$map(CCA1_weights, "gene", removeUnmappedRows = TRUE)
+
+all_interactions <- string_db$get_interactions(all_mapped$STRING_id)
+
+all_network<- all_interactions
+
+all_network$from = all_mapped$gene[match(all_network$from,all_mapped$STRING_id)]
+all_network$to = all_mapped$gene[match(all_network$to,all_mapped$STRING_id)]
+graph_all_network <- graph_from_data_frame(all_network[, c("from", "to")], directed = FALSE)
+all_network_genes <- V(graph_all_network)$name
+in_neg <- all_network_genes %in% V(g_neg)$name
+is_autism_risk <- all_network_genes %in% combined_autism_genes$`Combined Autism`
+
+fisher_mat <- table(in_neg, is_autism_risk)
+#           is_autism_risk
+# in_neg      FALSE  TRUE
+# FALSE       12702   952
+# TRUE          28    34
+
+fisher_res <- fisher.test(fisher_mat)
+
+fisher_res  
+
+fisher_df <- data.frame(
+  Group    = c("In CCA1_down", "Not in CCA1_down"),
+  Autism_Risk    = c(fisher_mat["TRUE", "TRUE"],  fisher_mat["FALSE", "TRUE"]),
+  Non_Autism_Risk = c(fisher_mat["TRUE", "FALSE"], fisher_mat["FALSE", "FALSE"])
+) %>%
+  tidyr::pivot_longer(cols = c(Autism_Risk, Non_Autism_Risk), names_to = "Gene_Type", values_to = "Count") %>%
+  dplyr::group_by(Group) %>%
+  dplyr::mutate(Proportion = Count / sum(Count))
+
+p_autism_risk_fisher <- ggplot(fisher_df, aes(x = Group, y = Proportion, fill = Gene_Type)) +
+  geom_bar(stat = "identity", color = "grey30", width = 0.6) +
+  scale_fill_manual(values = c("Autism_Risk" = "#01665e", "Non_Autism_Risk" = "grey80"),
+                    labels = c("Autism Risk Gene", "Non-Autism Risk Gene")) +
+  annotate("text", x = 1.5, y = 1.05,
+           label = paste0("OR = ", round(fisher_res$estimate, 2),
+                          "\np = ", formatC(fisher_res$p.value, format = "e", digits = 2)),
+           size = 5, hjust = 0.5) +
+  labs(x = NULL, y = "Proportion", fill = NULL,
+       title = "SFARI Enrichment\nin CCA1 Network") +
+  theme_cowplot() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 14))
+
+deg_neg = degree_Mean[degree_Mean$Direction=="CCA1_down",]
+
+deg_neg_ann <- deg_neg %>%
+  dplyr::mutate(
+    ASD_Risk = ifelse(Gene %in% combined_autism_genes$`Combined Autism`,
+                      "Yes", "No")
+  )
+deg_neg_ann$ASD_Risk = factor(deg_neg_ann$ASD_Risk, levels =c("Yes","No"))
+summary(deg_neg_ann$Degree)
+
+wilcox_test(deg_neg_ann, formula = Degree ~ ASD_Risk,    alternative = c("two.sided"),
+            mu = 0, paired = FALSE, exact = NULL)
+
+# .y.    group1 group2    n1    n2 statistic        p
+# * <chr>  <chr>  <chr>  <int> <int>     <dbl>    <dbl>
+#   1 Degree Yes    No        34    28      718. 0.000527
+wilcox_test(deg_neg_ann, formula = Degree ~ ASD_Risk,    alternative = c("two.sided"),
+            mu = 0, paired = FALSE, exact = NULL)
+wilcox.test(y = deg_neg_ann$Degree[deg_neg_ann$ASD_Risk=="No"], x = deg_neg_ann$Degree[deg_neg_ann$ASD_Risk=="Yes"],
+            alternative = c("two.sided"),
+            mu = 0, paired = FALSE, exact = NULL, correct = TRUE,
+            conf.int = FALSE, conf.level = 0.95)
+
+rstatix::wilcox_effsize(
+  deg_neg_ann,
+  Degree ~ ASD_Risk
+)
+
+# the degrees tell the story clearly — NRXN1=56, GRIN2A=34, GRM5=26 etc.
+p_boxplot_degree <- ggplot(deg_neg_ann, aes(x = ASD_Risk, y = Degree, fill = ASD_Risk)) +
+  geom_boxplot(outlier.shape = NA, width = 0.5) +
+  geom_jitter(width = 0.15, alpha = 0.6, size = 2) +
+  geom_text_repel(data = deg_neg_ann %>% 
+                    dplyr::filter(Degree > 16.00),aes(label = Gene), size = 6,color = "#01665e") +
+  scale_fill_manual(values = c("Yes" = "grey30", "No" = "grey80")) +
+  stat_compare_means(
+    method = "wilcox.test",
+    label = "padj",
+    comparisons = list(c("Yes", "No")),
+    size = 6
+  )+
+  labs(x = NULL, y = "Node Degree", 
+       title = "Degree connectedness of autism risk genes") +
+  theme_cowplot() +
+  theme(legend.position = "none",
+        plot.title = element_text(size =20,hjust = 0.5, face = "bold"),
+        axis.text = element_text(size=18, hjust = 1),
+        axis.title = element_text(size=20, hjust = 0.5),
+        axis.text.x = element_text(angle=45, hjust =1))+
+  ylim(0,60)
+p_boxplot_degree
+
+# ===============================
+# Hub Genes from mean scores barplot
+# ===============================
+degree_Mean_top = degree_Mean_top %>%
+  mutate(sex_hit     = Gene %in% SEX_DEGs$gene,
+        autism_hit  = Gene %in% ASD_DEGs$gene, 
+    fill_group = case_when(
+      sex_hit & autism_hit ~ "Shared DEG",
+      sex_hit            ~ "Sex DEG",
+      autism_hit           ~ "Autism DEG",
+      TRUE                 ~ "Other"))
+
+p_hubgenes_barplot = ggplot(degree_Mean_top, aes(x = Gene, y = Degree, fill=fill_group, color = Autism_Risk)) +
+  geom_bar(stat="identity", linewidth = 1.2)+
+  # scale_fill_gradient2(low = "#01665e", mid =  "#f7f7f7", high="#b35806", midpoint =0 ,limits = c(-4,3),oob = squish) +
+  scale_fill_manual(values = c("Shared DEG" = "#F0C674", "Autism DEG" ="#FDF198" , "Sex DEG" = "slateblue3"))+
+  scale_color_manual(values =c("Yes"= "black", "No"="white")) +
+  scale_size_continuous(range =c(2,8)) +
+  labs(x = "Gene Name", 
+       y = "Node Degree",
+       title = "Hub Genes- Top 0.5%", 
+       fill = "CCA1 Score", color="SFARI Gene") +
+  theme_cowplot() +
+  ylim(0,60)+
+  theme(plot.title= element_text(size=20, face="bold", hjust  =0.5),
+        axis.text.x = element_text(angle=45, hjust =1, size=18),
+        axis.text.y = element_text(size=18, hjust = 1),
+        axis.title = element_text(size=20, hjust = 0.5))
+p_hubgenes_barplot
+
+# ===============================
+# Mean logFC of Hub Genes — BRCT of Interest
+# ===============================
+
+hub_genes <- data.frame(
+  Full_Gene      = degree_Mean_top$Gene,
+  Full_Direction = degree_Mean_top$Direction
+)
+
+dge_hub_genes <- dplyr::bind_rows(
+  summarise_hub_dge("Full_Gene", "Full_Direction", "Full"),
+) %>%
+  dplyr::mutate(
+    Dataset  = ifelse(brainregion_shorten == "Frontal Cortex", "Autism", "Sex"),
+    BR_CT    = paste(brainregion_shorten, Broad_Celltype, sep = "_"),
+    Dir      = ifelse(grepl("down", Direction), "Negative", "Positive"),
+    Dir      = factor(Dir, levels = c("Positive", "Negative")),
+    Dataset  = factor(Dataset, levels = c("Sex", "Autism")),
+    Broad_Celltype = factor(Broad_Celltype,
+                            levels = c("NeuVasc", "Micro", "Oligo/OPC", "Astro", "InhNeu", "ExcNeu")),
+    brainregion_shorten = factor(brainregion_shorten,
+                                 levels = c("FusGyr", "AngGyr", "CauIns", "InfLTO",
+                                            "IntParSul", "RetCor", "Frontal Cortex"))
+  )
+
+dge_hub_genes = dge_hub_genes[dge_hub_genes$Direction =="CCA1_down",]
+
+dge_hub_genes <- dge_hub_genes %>%
+  mutate(joint_dir = ifelse(mean_logFC >= 0, "Up in Autism / Male-Biased", "Down in Autism / Female-Biased"),
+         dataset = ifelse(brainregion_shorten == "Frontal Cortex","Autism","Sex"))
+
+p3_hubgenes_neg_logFC_triangle = ggplot(dge_hub_genes, aes(x = brainregion_shorten, y = Broad_Celltype)) +
+  geom_point(aes(size = abs(mean_logFC), color = joint_dir, shape = joint_dir, fill = joint_dir)) +
+  facet_grid(cols = vars(Dataset), scales = "free", space = "free") +
+  scale_color_manual(values = c("Up in Autism / Male-Biased" = "#b35806",
+                                "Down in Autism / Female-Biased" = "#01665e"),
+                     name = NULL) +
+  scale_fill_manual(values = c("Up in Autism / Male-Biased" = "#b35806",
+                               "Down in Autism / Female-Biased" = "#01665e"),
+                    name = NULL) +
+  scale_shape_manual(values = c("Up in Autism / Male-Biased" = 24,     
+                                "Down in Autism / Female-Biased" = 25), 
+                     name = NULL) +
+  scale_size_continuous(range = c(2, 9),name = "|Mean logFC|") +
+  labs(title = "Mean logFC of Hub Genes", x = "Brain Region", y = "Broad Cell Class", color= "Mean logFC") +
+  theme_cowplot()+
+  theme(
+    axis.text.x      = element_text(angle = 45, hjust = 1, size = 18),
+    axis.text.y = element_text(size=18, hjust = 1),
+    axis.title = element_text(size=20, hjust = 0.5),
+    strip.text       = element_text(face = "bold", size = 16),
+    strip.background = element_rect(fill = "gray95", color = "white"),
+    plot.title       = element_text(hjust = 0.5, size = 20, face = "bold"),
+    legend.position  = "right"
+  )
+p3_hubgenes_neg_logFC_triangle
+
+# ===============================
+# Mean Rank position of Hub Genes — BRCT of Interest
+# ===============================
+# 
+# summarise_hub_rank_dge <- function(gene_col, dir_col, ppi_label) {
+#   
+#   # --- ASD DGE ---
+#   asd_ranked <- asd_dge %>%
+#     dplyr::group_by(`CELL TYPE`) %>%                          
+#     dplyr::mutate(
+#       rank = rank(logFC_ASD_vs_CTL, ties.method = "average") / n()  
+#     ) %>%
+#     dplyr::ungroup()
+#   
+#   asd_sub <- asd_ranked %>%
+#     dplyr::filter(gene %in% hub_genes[[gene_col]]) %>%
+#     dplyr::mutate(
+#       Direction           = hub_genes[[dir_col]][match(gene, hub_genes[[gene_col]])],
+#       brainregion_shorten = "Frontal Cortex"
+#     ) %>%
+#     dplyr::group_by(Broad_Celltype, brainregion_shorten, Direction) %>%
+#     dplyr::summarise(mean_rank = mean(rank, na.rm = TRUE), .groups = "drop")
+#   
+#   # --- Sex DGE ---
+#   sex_ranked <- sex_dge %>%
+#     dplyr::group_by(BR_CellType) %>%                        
+#     dplyr::mutate(
+#       rank = rank(logFC, ties.method = "average") / n()
+#     ) %>%
+#     dplyr::ungroup()
+#   
+#   sex_sub <- sex_ranked %>%
+#     dplyr::filter(gene %in% hub_genes[[gene_col]]) %>%
+#     dplyr::mutate(
+#       Direction = hub_genes[[dir_col]][match(gene, hub_genes[[gene_col]])]
+#     ) %>%
+#     dplyr::group_by(Broad_Celltype, brainregion_shorten, Direction) %>%
+#     dplyr::summarise(mean_rank = mean(rank, na.rm = TRUE), .groups = "drop")
+#   
+#   dplyr::bind_rows(asd_sub, sex_sub) %>%
+#     dplyr::mutate(PPI = ppi_label)
+# }
+# 
+# dge_hub_genes <- dplyr::bind_rows(
+#   summarise_hub_rank_dge("Full_Gene", "Full_Direction", "Full")
+# ) %>%
+#   dplyr::mutate(
+#     Dataset  = ifelse(brainregion_shorten == "Frontal Cortex", "Autism", "Sex"),
+#     BR_CT    = paste(brainregion_shorten, Broad_Celltype, sep = "_"),
+#     Dir      = ifelse(grepl("down", Direction), "Negative", "Positive"),
+#     Dir      = factor(Dir, levels = c("Positive", "Negative")),
+#     Dataset  = factor(Dataset, levels = c("Sex", "Autism")),
+#     Broad_Celltype = factor(Broad_Celltype,
+#                             levels = c("NeuVasc", "Micro", "Oligo/OPC", "Astro", "InhNeu", "ExcNeu")),
+#     brainregion_shorten = factor(brainregion_shorten,
+#                                  levels = c("FusGyr", "AngGyr", "CauIns", "InfLTO",
+#                                             "IntParSul", "RetCor", "Frontal Cortex"))
+#   )
+# 
+# dge_hub_genes = dge_hub_genes[dge_hub_genes$Direction =="CCA1_down",]
+# 
+# pdf("June2026_PPI_Meanrankposition_heatmap_neg.pdf", width = 15, height =6)
+# p3_hubgenes_rank_neg = ggplot(dge_hub_genes, aes(x = Dataset, y = Broad_Celltype)) +
+#   geom_tile(aes(fill = mean_rank), color = "grey30", width = 0.93, height = 0.93) +
+#   scale_fill_gradient2(low      = "#01665e", mid      = "#f7f7f7",high     = "#b35806",midpoint = 0.5,          limits   = c(0, 1))+
+#   facet_grid(cols = vars(brainregion_shorten), scales = "free", space = "free") +
+#   labs(title = "Ranked Position of Hub Genes", x = "Brain Region", y = "Broad Cell Type") +
+#   theme_minimal(base_size = 14, base_line_size = 0) +
+#   theme(
+#     axis.text.x      = element_text(angle = 45, hjust = 1, size = 18),
+#     axis.text.y = element_text(size=18, hjust = 1),
+#     axis.title = element_text(size=20, hjust = 0.5),
+#     strip.text       = element_text(face = "bold", size = 16),
+#     strip.background = element_rect(fill = "gray95", color = "white"),
+#     plot.title       = element_text(hjust = 0.5, size = 20, face = "bold"),
+#     legend.position  = "right"
+#   )
+# p3_hubgenes_rank_neg
+# dev.off()
+
+# ===============================
+# Enrichment testing
+# ===============================
+neg_ppi = enrichGO_function_single(select_genes = combined_networks$CCA1_down$Mapped$gene, bg = CCA1_weights$gene)
+
+sig_enrch_ppi_neg <- neg_ppi$Sig_Enrich
+
+setDT(sig_enrch_ppi_neg)
+
+sig_enrch_ppi_neg_top30 = sig_enrch_ppi_neg[order(sig_enrch_ppi_neg$zScore, decreasing=T),][1:10]
+
+sig_enrch_ppi_neg_top30 = as.data.frame(sig_enrch_ppi_neg_top30)
+
+sig_enrch_ppi_neg_top30 = sig_enrch_ppi_neg_top30[order(sig_enrch_ppi_neg_top30$zScore, decreasing=F),]
+
+sig_enrch_ppi_neg_top30$Description = factor(sig_enrch_ppi_neg_top30$Description,levels = unique(sig_enrch_ppi_neg_top30$Description))
+
+sig_enrch_ppi_neg_top30$`Gene List` = str_wrap(sig_enrch_ppi_neg_top30$Description, width =30)
+
+sig_enrch_ppi_neg_top30$`Gene List` = factor(sig_enrch_ppi_neg_top30$`Gene List`,levels = rev(unique(sig_enrch_ppi_neg_top30$`Gene List`) ))
+
+sig_enrch_ppi_neg_top30$significant = "Yes"
+
+sig_enrch_ppi_neg_top30$significant[sig_enrch_ppi_neg_top30$p.adjust > 0.05] = "No"
+
+p_5_shared_enrich_change = ggplot(sig_enrch_ppi_neg_top30, aes(x = `Gene List` , y =zScore, fill = zScore)) +
+  geom_segment( aes(x=`Gene List`, xend=`Gene List`, y=0, yend=zScore, color = significant)) +
+  geom_point(position = position_dodge(width = 0.6), aes(size = -log10(p.adjust), color = significant), shape =21, stroke = 1.5) +
+  scale_fill_gradient2(high = "#01665e",low = "white",midpoint = 3) +
+  scale_color_manual(values = c("Yes" = "black", "No" = "white")) +
+  labs(title = "Enrichments of Negative Pole Network",x = "Gene List",y = "zScore") +
+  theme_cowplot() +
+  scale_size_continuous(name = "-log10(`FDR q`)", range = c(5, 20), limits=c(0,50)) +
+  theme_cowplot() +
+  theme(
+    axis.text.x        = element_text(angle = 40, hjust = 1, size = 16),
+    axis.text.y        = element_text(size = 18),
+    axis.title         = element_text(size = 20),
+    plot.margin        = margin(t = 10, r = 10, b = 20, l = 40, unit = "pt"),
+    panel.grid.major.x = element_line(color = "grey92"),
+    panel.grid.minor   = element_blank(),
+    plot.title         = element_text(hjust = 0.5, size = 20, face = "bold"),
+    legend.position    = "right"
+  )+
+  ylim(0,15)
+p_5_shared_enrich_change
+
+
+# ===============================
+# Developmental trajectories
+# ===============================
+# Combine
+top_gene_subsets_all <- list("Full_Up"=combined_networks$CCA1_up$Mapped$gene, "Full_Down"=combined_networks$CCA1_down$Mapped$gene,"Autism_Risk_Genes"= combined_autism_genes$`Combined Autism`, "Schizophrenia_Risk_Genes" = combined_schizophrenia_genes$`Combined Schizophrenia`)
+
+# Column means from psychencode 
+Means_with_ID_cort <- list()
+
+for(i in names(top_gene_subsets_all)){
+  
+  genelist = top_gene_subsets_all[[i]]
+  
+  sig_in_data1 = mrna_cortex[rownames(mrna_cortex) %in% genelist,] 
+  
+  Means = colMeans(sig_in_data1)
+  Names = colnames(sig_in_data1)
+  
+  Means = data.frame(Names = Names, Means = Means)
+  
+  Means_with_ID = merge(mrna_psychencode_metadata, Means, by.x = "column_names", by.y = "Names")
+  
+  Means_with_ID$name = i
+  
+  Means_with_ID_cort[[i]] = Means_with_ID[Means_with_ID$brainregion %in% cortical_regions,]
+  
+}
+
+Means_with_ID_dfc_reduce = Reduce(rbind,Means_with_ID_cort)
+
+custom_colors <- c(
+  "Full_Down" = "#01665e",  
+  "Full_Up" = "#b35806" ,
+  "Autism_Risk_Genes" = "goldenrod1"
+  #,"Schizophrenia_Risk_Genes" = "blue"
+)
+
+Means_with_ID_dfc_down = Means_with_ID_dfc_reduce[grepl("Down|Autism",Means_with_ID_dfc_reduce$name),]
+
+p5_dev_traj =  ggplot(Means_with_ID_dfc_down,aes(x = window, y = Means, color = name)) +
+  geom_vline(xintercept = 5, color = "gray") +
+  geom_smooth(method = "loess", se = T) +
+  scale_x_continuous(breaks = seq(1, 10, 1),
+                     labels = window) +
+  scale_color_manual(values = custom_colors)+
+  guides(color = guide_legend()) +
+  labs(x = "← PCW | PY →", y = "Normalized expression",
+       title = "Developmental Trajectories") +
+  theme_cowplot()+
+  theme(legend.key.size = unit(0.3, "cm"),
+        plot.title = element_text(face="bold", size =25, hjust = 0.5),
+        axis.text = element_text(size=18, hjust = 1),
+        axis.title = element_text(size=20, hjust = 0.5))+
+  ylim(2.5,3.5)
+
+p5_dev_traj
+table(Means_with_ID_dfc_reduce$name)
+
+p5_dev_traj_br =  ggplot(Means_with_ID_dfc_reduce,aes(x = window, y = Means, color = name)) +
+  geom_vline(xintercept = 5, color = "gray") +
+  geom_smooth(method = "loess", se = T) +
+  scale_x_continuous(breaks = seq(1, 10, 1),
+                     labels = window) +
+  scale_color_manual(values = custom_colors)+
+  guides(color = guide_legend()) +
+  labs(x = "← PCW | PY →", y = "Normalized expression",
+       title = "Developmental Trajectories") +
+  theme_cowplot()+
+  facet_wrap(~brainregion)+
+  theme(legend.key.size = unit(0.3, "cm"),
+        plot.title = element_text(face="bold", size =25, hjust = 0.5),
+        axis.text = element_text(size=18, hjust = 1),
+        axis.title = element_text(size=20, hjust = 0.5))+
+  ylim(2.5,3.5)
+p5_dev_traj_br
+
+plot_grid(p5_dev_traj_autunq, p5_dev_traj)
+
+# ===============================
+#Permutations, replacing each gene with one with similar connectedness
+# ===============================
+
+# Full PPI
+set.seed(24)
+CCA1_weights = as.data.frame(CCA1_weights)
+all_mapped <- string_db$map(CCA1_weights, "gene", removeUnmappedRows = TRUE)
+
+all_interactions <- string_db$get_interactions(all_mapped$STRING_id)
+all_network<- all_interactions
+all_network$from = all_mapped$gene[match(all_network$from,all_mapped$STRING_id)]
+all_network$to = all_mapped$gene[match(all_network$to,all_mapped$STRING_id)]
+
+graph_all_network <- graph_from_data_frame(all_network[, c("from", "to")], directed = FALSE)
+
+degree_all <- data.frame(Degree= degree(graph_all_network, mode = "all"))
+degree_all = rownames_to_column(degree_all, "Gene")
+
+n_permutations <- 1000
+
+set.seed(18)
+
+breaks <- unique(quantile(degree_all$Degree, probs = seq(0, 1, 0.05), na.rm = TRUE))
+
+degree_all$bin <- cut(
+  degree_all$Degree,
+  breaks = breaks,
+  include.lowest = TRUE
+)
+
+
+set.seed(24)
+
+ggplot(degree_all, aes(x = Degree))+
+  geom_histogram()+
+  scale_color_viridis()+
+  theme_minimal()+
+  xlab("Frequency")+
+  ggtitle("Full Network Connectedness")+
+  theme(plot.title = element_text(hjust = 0.5, face="bold"))
+
+
+obs_genes <- degree_all
+
+obs_genes_pos <- obs_genes %>%
+  dplyr::filter(Gene %in% combined_networks$CCA1_up$Degree$Gene) %>%
+  dplyr::left_join(combined_networks$CCA1_up$Degree, by="Gene") %>% 
+  select(Gene, bin)
+
+res_pos <- degree_matched_permutation(graph_all_network,
+                                      obs_genes_pos,
+                                      n_permutations = 1000,
+                                      n_bins = 30,
+                                      stat = "n_edges",
+                                      allow_repeats = FALSE,
+                                      seed = 42)
+
+obs_genes_neg <- obs_genes %>%
+  filter(Gene %in% combined_networks$CCA1_down$Degree$Gene) %>%
+  dplyr::left_join(combined_networks$CCA1_down$Degree, by="Gene") %>% 
+  select(Gene, bin)
+
+
+res_neg <- degree_matched_permutation(graph_all_network,
+                                      obs_genes_neg,
+                                      n_permutations = 1000,
+                                      n_bins = 100,
+                                      stat = "n_edges",
+                                      allow_repeats = FALSE,
+                                      seed = 42)
+# gsize(graph_all_network) 
+# edge size for network of 213 top 1% ppi points is 1544
+
+res_pos$p_val
+# res$p_val
+# [1] 0.000999001
+
+res_pos$Median = median(res_pos$perm_stats)
+res_pos = as.data.frame(res_pos)
+
+pdf("ExtraFig_Mean_POSITIVE_permutation_resultsPPI_networkconnectedness.pdf", width = 6, height = 4)
+ggplot(res_pos, aes(x = perm_stats)) +
+  geom_histogram(binwidth = diff(range(res_pos$perm_stats))/30, fill = "skyblue", color = "black", alpha = 0.7) +
+  geom_vline(aes(xintercept = Median), color = "black", linetype = "dotted", size = 2) +
+  geom_vline(xintercept = 284, color ="red", size=2)+
+  labs(title = "Distribution of Summed Gene Degrees\n from 1000 Permutations of PPI Networks",
+       x = "Sum",
+       y = "Count") +
+  theme_minimal()+
+  theme(plot.title= element_text (hjust = 0.5, size =20, face="bold"))
+dev.off()
+
+res_neg$p_val
+res_neg$Median = median(res_neg$perm_stats)
+res_neg = as.data.frame(res_neg)
+
+pdf("ExtraFig_Mean_NEGATIVE_permutation_resultsPPI_networkconnectedness.pdf", width = 6, height = 4)
+ggplot(res_neg, aes(x = perm_stats)) +
+  geom_histogram(binwidth = diff(range(res_neg$perm_stats))/30, fill = "skyblue", color = "black", alpha = 0.7) +
+  geom_vline(aes(xintercept = Median), color = "black", linetype = "dotted", size = 2) +
+  geom_vline(xintercept =unique(res_neg$obs_stat), color ="red", size=2)+
+  labs(title = "Distribution of Summed Gene Degrees\n from 1000 Permutations of PPI Networks",
+       x = "Sum",
+       y = "Count") +
+  theme_minimal()+
+  theme(plot.title= element_text (hjust = 0.5, size =20, face="bold"))
+dev.off()
+
+hits <- all_mapped$STRING_id[1:2000]
+string_db$plot_network(hits)
+
+g_sub_pos <- induced_subgraph(graph_all_network, vids = obs_genes_pos$Gene)
+gsize(g_sub_pos)
+
+table(obs_genes_pos$bin)
+# [2,12]        (12,20]        (20,26]        (26,34]        (34,42]        (42,50]        (50,60] 
+# 0              0              1              3              1              3              2 
+# (60,72]        (72,84]        (84,98]       (98,114]      (114,134]      (134,154]      (154,176] 
+# 1              3              2              2              3              2              1 
+# (176,208]      (208,250]      (250,304]      (304,382]      (382,528] (528,4.63e+03] 
+# 1              5              3              7             11              5 
+
+rand_example = c(
+  candidates_by_bin$`(20,26]`[1:1],
+  candidates_by_bin$`(26,34]`[1:3],
+  candidates_by_bin$`(34,42]`[1:1],
+  candidates_by_bin$`(42,50]`[1:3],
+  candidates_by_bin$`(50,60]`[1:2],
+  candidates_by_bin$`(60,72]`[1:1],
+  candidates_by_bin$`(72,84]`[1:3],
+  candidates_by_bin$`(84,98]`[1:2],
+  candidates_by_bin$`(98,114]`[1:2],
+  candidates_by_bin$`(114,134]`[1:3],
+  candidates_by_bin$`(134,154]`[1:2],
+  candidates_by_bin$`(154,176]`[1:1],
+  candidates_by_bin$`(176,208]`[1:1],
+  candidates_by_bin$`(208,250]`[1:5],
+  candidates_by_bin$`(250,304]`[1:3],
+  candidates_by_bin$`(304,382]`[1:7],   
+  candidates_by_bin$`(382,528]`[1:11],
+  candidates_by_bin$`(528,4.63e+03]`[1:5]
+)
+
+g_sub_rand <- induced_subgraph(graph_all_network, vids = rand_example)
+gsize(g_sub_rand)
+#66
+
+hits_rand <- rand_example
+string_db$plot_network(hits_rand) #expected interactions = 27, interactions =33, p-value = 0.1465
+
+hits_pos <- pos_mapped$STRING_id
+string_db$plot_network(hits_pos) #expected interactions = 42, interactions = 158
+median(res_pos$perm_stats) #median of permutation statistics = 54 
+res_pos$obs_stat
+
+hits_neg <- neg_mapped$STRING_id
+string_db$plot_network(hits_neg) #expected interactions = 18
+median(res_neg$perm_stats) #median of permutation statistics = 36 
+# table(CCA1_weights$gene %in% combined_autism_genes$`Combined Autism`)
+# FALSE  TRUE 
+# 15527   988 
+# 988/15527
+
