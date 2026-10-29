@@ -1,3 +1,20 @@
+suppressPackageStartupMessages({
+  library(dplyr)
+  library(tidyverse)
+  library(stringr)
+  library(cowplot)
+  library(ggplot2)
+  library(readxl)
+  library(tibble)
+  library(WriteXLS)
+  library(ggrepel)
+  library(scales)
+  library(STRINGdb)
+  library(ggVennDiagram)
+  library(clusterProfiler)
+  library(org.Hs.eg.db)
+})
+
 
 map_broad_celltype <- function(df, celltype_col) {
   df %>%
