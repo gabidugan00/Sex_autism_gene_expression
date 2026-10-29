@@ -190,70 +190,26 @@ specific_gene_heatmap = function(CCA1_weights_df, genelist){
   
 }
 
-annotate_broad_celltype_sex <- function(celltype) {
-  dplyr::case_when(
-    celltype %in% c("L23IT","L4IT","L5IT","L56NP","L6IT","L6b","L6CT",
-                    "L5ET/ L6IT","L6CT / L5IT","L23IT/ L5IT") ~ "ExcNeu",
-    celltype %in% c("VIP","PVALB","SST","LAMP5","ADARB2","PAX6",
-                    "Chandelier","Sncg") ~ "InhNeu",
-    celltype %in% c("Astro") ~ "Astro",
-    celltype %in% c("Micro") ~ "Micro",
-    celltype %in% c("Oligo","OPC") ~ "Oligo/OPC",
-    celltype %in% c("BEC") ~ "NeuVasc",
-    TRUE ~ NA_character_
-  )
-}
-
-annotate_broad_celltype_autism <- function(celltype) {
-  dplyr::case_when(
-    celltype %in% c("EXT_6_L23","EXT_3_L23","EXT_11_L34","EXT_10_L34",
-                    "EXT_1_L4","EXT_13_L45","EXT_14_L5B","EXT_4_L56",
-                    "EXT_7_L2356","EXT_5_L56","EXT_2_L56","EXT_12_L56",
-                    "EXT_8_L6","EXT_9_L6") ~ "ExcNeu",
-    celltype %in% c("INT_5_SST","INT_2_PV_SULF","INT_6_PV",
-                    "INT_1_KIT","INT_3_RELN_ND","INT_4_VIP_CR") ~ "InhNeu",
-    celltype %in% c("ASTRO_1","ASTRO_2","ASTRO_3") ~ "Astro",
-    celltype %in% c("MG1","MG2","BBB_MG3") ~ "Micro",
-    celltype %in% c("ODC_1","ODC_2","ODC_3",
-                    "OPCS_1","OPCS_2","OPCS_3","OPCS_4") ~ "Oligo/OPC",
-    celltype %in% c("BBB_Endo_1","BBB_Pericytes","BBB_SM(Mural)") ~ "NeuVasc",
-    TRUE ~ NA_character_
-  )
-}
-annotate_brainregion_short <- function(brainregion) {
-  dplyr::recode(
-    brainregion,
-    "Angular_Gyrus" = "AngGyr",
-    "Caudal_Insula" = "CauIns",
-    "Fusiform_Gyrus" = "FusGyr",
-    "Inferior_Lateral_TemporalOccipital" = "InfLTO",
-    "Intraparietal_sulcus" = "IntParSul",
-    "Retrosplenial_cortex" = "RetCor",
-    "PFC" = "PFC"
-  )
-}
-
-
 
 # ===============================
 # Read in data
 # ===============================
 #Sex and autism matrices that CCA was run on 
-matrix1 =readRDS("/vf/users/HGBomics/GabiDugan/OxCam/Human.Transcriptomics/Sex_ASD/Full_CT_BR/rCCA/Redo_114/matrix1")
-matrix2= readRDS("/vf/users/HGBomics/GabiDugan/OxCam/Human.Transcriptomics/Sex_ASD/Full_CT_BR/rCCA/Redo_114/matrix2")
+matrix1 =readRDS("~/matrix1")
+matrix2= readRDS("~/matrix2")
 
 #rCCA with and without XY genes (including PAR)
-rcca_sex_schizophrenia =readRDS("/vf/users/HGBomics/GabiDugan/OxCam/Human.Transcriptomics/Key_Figures/rcca_sex_schizophrenia")
-rcca_sex_schizophrenia_auto = readRDS("/vf/users/HGBomics/GabiDugan/OxCam/Human.Transcriptomics/Key_Figures/rcca_sex_schizophrenia_auto")
-rcc.model_filtered_ASD =readRDS("/vf/users/HGBomics/GabiDugan/OxCam/Human.Transcriptomics/Key_Figures/rcca_sex_autism")
-rcc.model_filtered_ASD_auto = readRDS("/vf/users/HGBomics/GabiDugan/OxCam/Human.Transcriptomics/Key_Figures/rcca_sex_autism_auto")
-CCA1_weights <-read_xlsx("/vf/users/HGBomics/GabiDugan/OxCam/Human.Transcriptomics/Sex_ASD/Full_CT_BR/rCCA/Redo_114/CCA1_weights.xlsx")
-CCA1_weights_auto = read_xlsx("/vf/users/HGBomics/GabiDugan/OxCam/Human.Transcriptomics/Sex_ASD/Full_CT_BR/rCCA/Redo_114/CCA1_weights_auto.xlsx") 
+rcca_sex_schizophrenia =readRDS("~/rcca_sex_schizophrenia")
+rcca_sex_schizophrenia_auto = readRDS("~/rcca_sex_schizophrenia_auto")
+rcc.model_filtered_ASD =readRDS("~/rcca_sex_autism")
+rcc.model_filtered_ASD_auto = readRDS("~/rcca_sex_autism_auto")
+CCA1_weights <-read_xlsx("~/CCA1_weights.xlsx")
+CCA1_weights_auto = read_xlsx("~/CCA1_weights_auto.xlsx") 
 
 #Sex-chromosome genes as annotated 
-xy_genes = readRDS("/vf/users/HGBomics/GabiDugan/OxCam/Human.Transcriptomics/Key_Figures/Redraft_February2026/xy_genes")
-x_genes = readRDS("/vf/users/HGBomics/GabiDugan/OxCam/Human.Transcriptomics/Key_Figures/Redraft_February2026/x_genes")
-y_genes = readRDS("/vf/users/HGBomics/GabiDugan/OxCam/Human.Transcriptomics/Key_Figures/Redraft_February2026/y_genes")
+xy_genes = readRDS("~/xy_genes")
+x_genes = readRDS("~/x_genes")
+y_genes = readRDS("~/y_genes")
 par_1_genes <- c("AKAP17A", "ASMTL", "ASMTL-AS1", "CD99", "CD99P1", "CRLF2", "CSF2RA", "DHRSX", "DHRSX-IT1", "FABP5P13", "GTPBP6", "IL3RA", "LINC00102", "LINC00106", "LINC00685", "MIR3690", "MIR6089", "PLCXD1", "PPP2R3B", "P2RY8", "SHOX", "SLC25A6", "XG", "ZBED1")
 par_2_genes <- c("AMD1P2", "DDX11L16", "DPH3P2", "IL9R", "SPRY3", "ELOCP24", "TRPC6P1", "VAMP7", "WASH6P", "WASIR1")
 xy_genes_nopar = xy_genes[!xy_genes %in% c(par_1_genes,par_2_genes)]
@@ -264,7 +220,7 @@ sex_chromosome_genes = list("Y-Chr (no PAR)"= y_genes_nopar, "X-Chr (no PAR)" = 
 # ===============================
 # Risk genes
 # ===============================
-SFARI_genes <- read_xlsx("/vf/users/HGBomics/GabiDugan/OxCam/Human.Transcriptomics/SFARI-Gene_genes_07-08-2025release_09-26-2025export.xlsx",skip =1)
+SFARI_genes <- read_xlsx("~/SFARI-Gene_genes_07-08-2025release_09-26-2025export.xlsx",skip =1)
 
 SFARI_genes= list("Autism - SFARI Score 1"=SFARI_genes$`gene-symbol`[SFARI_genes$`gene-score`=="1"],"Autism - SFARI Score 2"=SFARI_genes$`gene-symbol`[SFARI_genes$`gene-score`=="2"])
 
