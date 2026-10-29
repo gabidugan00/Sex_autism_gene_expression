@@ -1,6 +1,4 @@
-# ===============================
-# Read in data
-# ===============================
+
 map_broad_celltype <- function(df, celltype_col) {
   df %>%
     dplyr::mutate(Broad_Celltype = case_when(
@@ -160,33 +158,6 @@ annotate_brainregion_short <- function(brainregion) {
     "Frontal Cortex" = "Frontal Cortex"
   )
 }
-
-map_broad_celltype <- function(df, celltype_col) {
-  df %>%
-    dplyr::mutate(Broad_Celltype = case_when(
-      !!sym(celltype_col) %in% c("EXT_6_L23", "EXT_3_L23", "EXT_11_L34", "EXT_10_L34", 
-                                 "EXT_1_L4", "EXT_13_L45", "EXT_14_L5B", "EXT_4_L56", 
-                                 "EXT_7_L2356", "EXT_5_L56", "EXT_2_L56", "EXT_12_L56", 
-                                 "EXT_8_L6", "EXT_9_L6", "Ex-L2", "Ex-L23", "Ex-L3", 
-                                 "Ex-L4_MYLK", "Ex-L45_MET", "Ex-L45_LRRK1", "Ex-L5b_HTR2C", 
-                                 "Ex-L56", "Ex-L56_CC_NTNG2", "Ex-L6_CC_SEMA3A", "Ex-L6b_SEMA3D", 
-                                 "Ex-L6b_SEMA3E", "L23IT", "L4IT", "L5IT", "L56NP", "L6IT", 
-                                 "L6b", "L6CT", "L5ET/ L6IT", "L6CT / L5IT", "L23IT/ L5IT") ~ "ExcNeu",
-      !!sym(celltype_col) %in% c("INT_5_SST", "INT_2_PV_SULF", "INT_6_PV", "INT_1_KIT", 
-                                 "INT_3_RELN_ND", "INT_4_VIP_CR", "In-Rosehip_CHST9", 
-                                 "In-Rosehip_TRPC3", "In-Reelin", "In-VIP", "In-PV_Chandelier", 
-                                 "In-PV_Basket", "In-SST", "VIP", "PVALB", "SST", "LAMP5", 
-                                 "ADARB2", "PAX6", "Chandelier", "Sncg") ~ "InhNeu",
-      !!sym(celltype_col) %in% c("ASTRO_1", "ASTRO_2", "ASTRO_3", "Ast", "Astro") ~ "Astro",
-      !!sym(celltype_col) %in% c("MG1", "MG2", "BBB_MG3", "Mic", "Micro") ~ "Micro",
-      !!sym(celltype_col) %in% c("ODC_1", "ODC_2", "ODC_3", "OPCS_1", "OPCS_2", "OPCS_3", 
-                                 "OPCS_4", "Oli", "OPC", "Oligo") ~ "Oligo/OPC",
-      !!sym(celltype_col) %in% c("BBB_Endo_1", "BBB_Pericytes", "BBB_SM(Mural)", "Endo", 
-                                 "Pericytes", "BEC") ~ "NeuVasc",
-      TRUE ~ "Other"
-    ))
-}
-
 
 summarize_dge <- function(df, logfc_col, dataset_name, group_cols = c("Broad_Celltype", "gene")) {
   df %>%
